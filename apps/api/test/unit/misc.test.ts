@@ -10,6 +10,8 @@ import { loadConfig } from "../../src/config/env.js";
 import { TimeoutError, mapWithConcurrency, retry, withTimeout } from "../../src/lib/async.js";
 import { JobQueue } from "../../src/lib/job-queue.js";
 import { hashPassword, verifyPassword } from "../../src/modules/auth/password.js";
+import { completedExchanges } from "../../src/modules/chat/chat.repository.js";
+import { bestExcerpt } from "../../src/ai/orchestrator.service.js";
 
 const baseEnv = { JWT_SECRET: "x".repeat(32), DATABASE_URL: "postgresql://u:p@localhost/db" };
 
@@ -107,12 +109,55 @@ describe("JobQueue", () => {
       await new Promise((r) => setTimeout(r, 5));
       if (fail) throw new Error(k);
     };
-    expect(q.push("a", job("a", true))).toBe(true);
-    expect(q.push("a", job("a"))).toBe(false);
-    q.push("b", job("b"));
+    expect(q.push("a", job("a", true))).toBe(true); // starts immediately
+    expect(q.push("b", job("b"))).toBe(true);
+    expect(q.push("b", job("b"))).toBe(false); // already queued: deduped
     await q.onIdle();
     expect(order).toEqual(["a", "b"]);
     expect(errors).toEqual(["a"]);
     await expect(q.onIdle()).resolves.toBeUndefined();
+  });
+
+  it("re-runs a key pushed while it is running (never drops a re-index), without running it concurrently", async () => {
+    const q = new JobQueue(2);
+    let running = 0;
+    let peak = 0;
+    let runs = 0;
+    const job = async () => {
+      peak = Math.max(peak, ++running);
+      runs++;
+      await new Promise((r) => setTimeout(r, 10));
+      running--;
+    };
+    q.push("doc", job);
+    expect(q.push("doc", job)).toBe(true);
+    await q.onIdle();
+    expect(runs).toBe(2);
+    expect(peak).toBe(1);
+  });
+});
+
+describe("completedExchanges", () => {
+  it("drops user messages from failed turns", () => {
+    const U = (content: string) => ({ role: "USER" as const, content });
+    const A = (content: string) => ({ role: "ASSISTANT" as const, content });
+    expect(completedExchanges([U("q1"), A("a1"), U("failed"), U("q2"), A("a2"), U("in-flight")])).toEqual([
+      U("q1"),
+      A("a1"),
+      U("q2"),
+      A("a2"),
+    ]);
+  });
+});
+
+describe("bestExcerpt", () => {
+  it("shows the passage that matches the query", () => {
+    const filler = "Unrelated introduction text goes here. ".repeat(20);
+    const content = `${filler}Employees receive 14 days of paid sick leave per year. ${filler}`;
+    const excerpt = bestExcerpt(content, "how much sick leave");
+    expect(excerpt).toContain("14 days of paid sick leave");
+    expect(excerpt.startsWith("…")).toBe(true);
+    expect(excerpt.length).toBeLessThanOrEqual(282);
+    expect(bestExcerpt("short", "x")).toBe("short");
   });
 });

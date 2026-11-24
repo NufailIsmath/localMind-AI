@@ -133,5 +133,6 @@ model ToolExecution {
   message      Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
 
   @@index([conversationId, createdAt])
+  @@index([messageId])
   @@index([toolName, createdAt])
 }

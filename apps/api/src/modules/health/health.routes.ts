@@ -2,30 +2,39 @@ import type { FastifyPluginAsync } from "fastify";
 import type { HealthDto } from "@localmind/shared";
 import { errorMessage } from "../../lib/errors.js";
 
+class MissingModelsError extends Error {}
+
 export const healthRoutes: FastifyPluginAsync = async (app) => {
   app.get("/", async (_req, reply) => {
     const { prisma, vectors, ollama, config } = app.services;
-    const check = async (fn: () => Promise<string | void>) => {
+    // This endpoint is unauthenticated: return short, safe reasons and log the
+    // full error (which can contain hostnames and connection strings) server-side.
+    const check = async (name: string, fn: () => Promise<string | void>, safe?: (err: unknown) => string | undefined) => {
       try {
         const detail = await fn();
         return { ok: true, ...(detail ? { detail } : {}) };
       } catch (err) {
-        return { ok: false, detail: errorMessage(err) };
+        _req.log.warn({ check: name, err: errorMessage(err) }, "health check failed");
+        return { ok: false, detail: safe?.(err) ?? "unavailable" };
       }
     };
 
     const [database, qdrant, llm] = await Promise.all([
-      check(async () => {
+      check("database", async () => {
         await prisma.$queryRaw`SELECT 1`;
       }),
-      check(() => vectors.health()),
-      check(async () => {
+      check("qdrant", () => vectors.health()),
+      check(
+        "ollama",
+        async () => {
         const models = await ollama.listModels({ timeoutMs: 3000 });
         const has = (m: string) => models.some((name) => name === m || name === `${m}:latest`);
         const missing = [config.ollama.chatModel, config.ollama.embeddingModel].filter((m) => !has(m));
-        if (missing.length) throw new Error(`missing models: ${missing.join(", ")} (run \`ollama pull <model>\`)`);
+        if (missing.length) throw new MissingModelsError(`missing models: ${missing.join(", ")} (run \`ollama pull <model>\`)`);
         return `${config.ollama.chatModel}, ${config.ollama.embeddingModel}`;
-      }),
+        },
+        (err) => (err instanceof MissingModelsError ? err.message : "cannot reach Ollama"),
+      ),
     ]);
 
     const checks = { database, qdrant, ollama: llm };

@@ -35,11 +35,31 @@ export interface ChatTurnInput {
 
 const EXCERPT_CHARS = 280;
 
+/**
+ * Picks the ~280-character window of a chunk that best matches the query, so
+ * the citation card shows the relevant passage rather than the chunk's start.
+ */
+export function bestExcerpt(content: string, query = ""): string {
+  if (content.length <= EXCERPT_CHARS) return content;
+  const terms = new Set((query.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []));
+  const sentences = [...content.matchAll(/[^.!?\n]+[.!?]*\s*/g)];
+  let bestStart = 0;
+  let bestScore = 0;
+  for (const s of sentences) {
+    const words = s[0].toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+    const score = words.filter((w) => terms.has(w)).length;
+    if (score > bestScore) [bestScore, bestStart] = [score, s.index ?? 0];
+  }
+  const start = Math.max(0, Math.min(bestStart, content.length - EXCERPT_CHARS));
+  const slice = content.slice(start, start + EXCERPT_CHARS).trim();
+  return `${start > 0 ? "…" : ""}${slice}${start + EXCERPT_CHARS < content.length ? "…" : ""}`;
+}
+
 /** Collects retrieved chunks across tool calls and assigns stable S1, S2… refs. */
 class SourceCollector {
   private readonly byChunk = new Map<string, Source>();
 
-  add(chunks: RetrievedChunk[]): string[] {
+  add(chunks: RetrievedChunk[], query?: string): string[] {
     return chunks.map((c) => {
       const key = `${c.documentId}:${c.chunkIndex}`;
       let source = this.byChunk.get(key);
@@ -52,7 +72,7 @@ class SourceCollector {
           pageStart: c.pageStart,
           pageEnd: c.pageEnd,
           score: Number(c.score.toFixed(4)),
-          excerpt: c.content.length > EXCERPT_CHARS ? `${c.content.slice(0, EXCERPT_CHARS).trimEnd()}…` : c.content,
+          excerpt: bestExcerpt(c.content, query),
         };
         this.byChunk.set(key, source);
       } else if (c.score > source.score) {
@@ -199,7 +219,7 @@ export class Orchestrator {
       userRole: user.role,
       conversationId,
       signal,
-      addSources: (chunks) => sources.add(chunks),
+      addSources: (chunks, query) => sources.add(chunks, query),
     });
 
     const execution: ToolExecutionSummary = {

@@ -6,7 +6,10 @@ import { UuidParam, parse } from "../../lib/validation.js";
 
 const ChatBody = z.object({
   conversationId: z.uuid().optional(),
-  message: z.string().trim().min(1, "Message is required").max(8000),
+  message: z
+    .string()
+    .transform((s) => s.replace(/\u0000/g, "").trim()) // PostgreSQL text can't store NUL
+    .pipe(z.string().min(1, "Message is required").max(8000)),
 });
 
 const chatRateLimit = { rateLimit: { max: 30, timeWindow: "1 minute" } };
@@ -21,12 +24,18 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
     reply.raw.on("close", () => {
       if (!reply.raw.writableFinished) controller.abort();
     });
-    return app.services.orchestrator.run({
-      user: { id: req.currentUser.id, role: req.currentUser.role },
-      conversationId: body.conversationId,
-      message: body.message,
-      signal: controller.signal,
-    });
+    try {
+      return await app.services.orchestrator.run({
+        user: { id: req.currentUser.id, role: req.currentUser.role },
+        conversationId: body.conversationId,
+        message: body.message,
+        signal: controller.signal,
+      });
+    } catch (err) {
+      // The client went away; nobody is listening for the response.
+      if (controller.signal.aborted) return reply.code(499).send();
+      throw err;
+    }
   });
 
   /**
@@ -91,5 +100,8 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
 function clientMessage(err: unknown): string {
   if (err instanceof AppError) return err.message;
   if (err instanceof UpstreamError) return `The AI backend is unavailable (${err.message}).`;
+  if ((err as { code?: string }).code === "P2025" || (err as { code?: string }).code === "P2003") {
+    return "This conversation no longer exists.";
+  }
   return "Something went wrong while generating the answer.";
 }

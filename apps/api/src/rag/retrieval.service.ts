@@ -19,12 +19,20 @@ export interface RetrieveOptions {
   signal?: AbortSignal;
 }
 
+/** Returns the subset of document ids that are currently searchable for the user. */
+export type LiveDocumentFilter = (userId: string, documentIds: string[]) => Promise<Set<string>>;
+
 /** Semantic search over a single user's indexed chunks. */
 export class RetrievalService {
   constructor(
     private readonly embeddings: EmbeddingService,
     private readonly vectors: VectorStore,
     private readonly defaults: { limit: number; scoreThreshold: number },
+    /**
+     * Defence in depth: drops hits whose document no longer exists in
+     * PostgreSQL (e.g. vectors orphaned by a failed Qdrant delete).
+     */
+    private readonly liveFilter?: LiveDocumentFilter,
   ) {}
 
   async retrieve(userId: string, query: string, opts: RetrieveOptions = {}): Promise<RetrievedChunk[]> {
@@ -38,7 +46,8 @@ export class RetrievalService {
       scoreThreshold: opts.scoreThreshold ?? this.defaults.scoreThreshold,
       documentIds: opts.documentIds,
     });
-    return hits.map((h) => ({
+    const live = this.liveFilter ? await this.liveFilter(userId, [...new Set(hits.map((h) => h.payload.documentId))]) : undefined;
+    return hits.filter((h) => !live || live.has(h.payload.documentId)).map((h) => ({
       id: h.id,
       documentId: h.payload.documentId,
       fileName: h.payload.fileName,

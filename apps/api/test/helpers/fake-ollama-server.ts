@@ -59,7 +59,7 @@ function decide(messages: OllamaMessage[], toolNames: Set<string>): { content: s
     return call("calculate", { a: Number(calc[1]), b: Number(calc[3]), operation: OPS[calc[2]!.toLowerCase()] });
   }
   if (/\[admin\]/.test(userText)) return call("get_system_stats", {});
-  if (/\b(time|date|today)\b/i.test(userText) && toolNames.has("get_current_time")) return call("get_current_time", {});
+  if (/(?<![-\w])(time|date|today)\b/i.test(userText) && toolNames.has("get_current_time")) return call("get_current_time", {});
   if (/\b(list|which|how many)\b.*\b(documents?|files?)\b/i.test(userText) && toolNames.has("list_documents")) {
     return call("list_documents", {});
   }
@@ -138,6 +138,8 @@ export async function startFakeOllama(opts: FakeOllamaOptions = {}, port = 0): P
       if (req.url === "/api/embed") {
         if (body.model !== embeddingModel) return json(res, 404, { error: `model "${body.model}" not found, try pulling it first` });
         const inputs: string[] = Array.isArray(body.input) ? body.input : [body.input];
+        // Test hook: documents containing this marker embed slowly, to exercise races.
+        if (inputs.some((t) => t.includes("SLOW_EMBED_MARKER"))) await new Promise((r) => setTimeout(r, 600));
         const embeddings = inputs.map((t) => hashEmbed(t.replace(/^search_(document|query):\s*/, ""), dims));
         return json(res, 200, { model: embeddingModel, embeddings });
       }

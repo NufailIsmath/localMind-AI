@@ -14,7 +14,7 @@ const fake = await startFakeOllama(
     chatModel: process.env.CHAT_MODEL ?? "qwen3:8b",
     embeddingModel: process.env.EMBEDDING_MODEL ?? "nomic-embed-text",
     dimensions: Number(process.env.EMBEDDING_DIMENSIONS ?? 768),
-    tokenDelayMs: 25,
+    tokenDelayMs: Number(process.env.MOCK_OLLAMA_TOKEN_DELAY_MS ?? 25),
   },
   port,
 );

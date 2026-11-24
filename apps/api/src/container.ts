@@ -74,10 +74,19 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
       dimensions: config.ollama.embeddingDimensions,
     });
 
-  const retrieval = new RetrievalService(embeddings, vectors, {
-    limit: config.rag.retrievalLimit,
-    scoreThreshold: config.rag.scoreThreshold,
-  });
+  const retrieval = new RetrievalService(
+    embeddings,
+    vectors,
+    { limit: config.rag.retrievalLimit, scoreThreshold: config.rag.scoreThreshold },
+    async (userId, documentIds) => {
+      if (documentIds.length === 0) return new Set();
+      const rows = await prisma.document.findMany({
+        where: { userId, id: { in: documentIds }, status: { in: ["READY", "PROCESSING", "PENDING"] } },
+        select: { id: true },
+      });
+      return new Set(rows.map((r) => r.id));
+    },
+  );
   const ingestion = new IngestionService(
     prisma,
     embeddings,

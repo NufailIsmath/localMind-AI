@@ -23,6 +23,8 @@ export class AuthService {
     // The very first account becomes the instance administrator.
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Serialise registrations so two simultaneous first sign-ups can't both become ADMIN.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(727372)`;
         const isFirst = (await tx.user.count()) === 0;
         return tx.user.create({ data: { email: normalized, passwordHash, role: isFirst ? "ADMIN" : "USER" } });
       });

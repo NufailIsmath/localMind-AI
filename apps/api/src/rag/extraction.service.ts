@@ -3,6 +3,7 @@ import mammoth from "mammoth";
 import { extractText } from "unpdf";
 import { badRequest } from "../lib/errors.js";
 import type { PageText } from "./chunking.service.js";
+import { assertSafeZip } from "./zip-guard.js";
 
 export type SupportedKind = "pdf" | "docx" | "txt";
 
@@ -57,6 +58,7 @@ export async function extractDocument(filename: string, bytes: Buffer): Promise<
       break;
     }
     case "docx": {
+      assertSafeZip(bytes);
       const { value } = await mammoth.extractRawText({ buffer: bytes });
       pages = [{ pageNumber: null, text: value }];
       break;

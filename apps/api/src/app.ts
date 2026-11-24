@@ -97,6 +97,8 @@ export async function buildApp(config: AppConfig, opts: BuildAppOptions = {}): P
       return send(err.timedOut ? 504 : 502, { error: "UPSTREAM_ERROR", message: err.message });
     }
     const e = err as { statusCode?: number; code?: string; message?: string };
+    // Prisma: record vanished mid-request (e.g. conversation deleted during a chat turn).
+    if (e.code === "P2025" || e.code === "P2003") return send(404, { error: "NOT_FOUND", message: "Resource not found" });
     if (e.statusCode === 429) return send(429, { error: "RATE_LIMITED", message: e.message ?? "Too many requests" });
     if (e.code === "FST_REQ_FILE_TOO_LARGE") return send(413, { error: "PAYLOAD_TOO_LARGE", message: "File is too large" });
     if (e.statusCode && e.statusCode >= 400 && e.statusCode < 500) {

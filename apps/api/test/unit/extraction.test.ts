@@ -39,6 +39,48 @@ describe("extractDocument", () => {
   });
 });
 
+describe("zip bomb protection", () => {
+  it("rejects a DOCX whose content inflates far beyond its size, before parsing it", async () => {
+    const { deflateRawSync } = await import("node:zlib");
+    const { assertSafeZip } = await import("../../src/rag/zip-guard.js");
+    // Build a one-entry zip: ~50 MB of zeros compresses to ~50 KB.
+    const raw = Buffer.alloc(50 * 1024 * 1024);
+    const data = deflateRawSync(raw);
+    const name = Buffer.from("word/document.xml");
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(raw.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    const cdOffset = local.length + name.length + data.length;
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(1, 8);
+    eocd.writeUInt16LE(1, 10);
+    eocd.writeUInt32LE(central.length + name.length, 12);
+    eocd.writeUInt32LE(cdOffset, 16);
+    const bomb = Buffer.concat([local, name, data, central, name, eocd]);
+
+    expect(() => assertSafeZip(bomb)).toThrow(/compression ratio/);
+    expect(() => assertSafeZip(bomb, { maxUncompressedBytes: 10 * 1024 * 1024, maxRatio: 1e9, maxEntries: 10 })).toThrow(/too large/);
+    await expect(extractDocument("bomb.docx", bomb)).rejects.toThrow(/Rejected archive/);
+  });
+
+  it("accepts normal DOCX files", async () => {
+    const { assertSafeZip } = await import("../../src/rag/zip-guard.js");
+    expect(() => assertSafeZip(Buffer.alloc(0))).toThrow(/not a valid zip/);
+    const docx = await makeDocx(["Hello"]);
+    expect(() => assertSafeZip(docx)).not.toThrow();
+  });
+});
+
 describe("sanitizeFilename", () => {
   it("strips paths and control characters", () => {
     expect(sanitizeFilename("../../etc/passwd")).toBe("passwd");

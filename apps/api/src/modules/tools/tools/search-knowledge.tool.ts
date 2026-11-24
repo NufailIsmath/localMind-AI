@@ -19,7 +19,7 @@ export const searchKnowledgeTool = (retrieval: RetrievalService, maxLimit = 10) 
       if (chunks.length === 0) {
         return { results: [], note: "No relevant passages found in the user's documents." };
       }
-      const refs = ctx.addSources(chunks);
+      const refs = ctx.addSources(chunks, query);
       return {
         results: chunks.map((c, i) => ({
           ref: refs[i],

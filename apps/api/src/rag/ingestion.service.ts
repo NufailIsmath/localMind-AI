@@ -21,6 +21,8 @@ export interface IngestionLogger {
 }
 
 const MAX_FILENAME = 200;
+/** Upper bound on chunks per document (~3M characters at the default chunk size). */
+export const MAX_CHUNKS_PER_DOCUMENT = 5000;
 
 export function sanitizeFilename(name: string): string {
   // eslint-disable-next-line no-control-regex
@@ -92,8 +94,11 @@ export class IngestionService {
   async remove(userId: string, documentId: string): Promise<void> {
     const doc = await this.prisma.document.findFirst({ where: { id: documentId, userId } });
     if (!doc) throw notFound("Document not found");
+    // Delete the row first: an indexing job that is still running checks for
+    // the row inside its final transaction and cleans up its own vectors if it
+    // is gone, so no ordering of the two operations can leave orphaned vectors.
+    await this.prisma.document.deleteMany({ where: { id: documentId, userId } });
     await this.vectors.deleteByDocument(userId, documentId);
-    await this.prisma.document.delete({ where: { id: documentId } });
     await rm(this.filePath(documentId), { force: true });
   }
 
@@ -109,10 +114,23 @@ export class IngestionService {
     return updated;
   }
 
-  /** Re-queues documents interrupted by a restart. */
+  /**
+   * After a restart: PENDING documents are re-queued. Documents that were
+   * PROCESSING are marked FAILED instead of retried automatically — if that
+   * document is what crashed the process, retrying it would crash-loop.
+   */
   async recoverInterrupted(): Promise<number> {
+    const interrupted = await this.prisma.document.findMany({ where: { status: "PROCESSING" }, select: { id: true, userId: true } });
+    for (const d of interrupted) {
+      await this.vectors.deleteByDocument(d.userId, d.id).catch(() => {});
+      await this.prisma.documentChunk.deleteMany({ where: { documentId: d.id } });
+    }
+    await this.prisma.document.updateMany({
+      where: { id: { in: interrupted.map((d) => d.id) } },
+      data: { status: "FAILED", chunkCount: 0, error: "Indexing was interrupted by a server restart. Use Re-index to try again." },
+    });
     const docs = await this.prisma.document.findMany({
-      where: { status: { in: ["PENDING", "PROCESSING"] } },
+      where: { status: "PENDING" },
       select: { id: true },
       orderBy: { uploadedAt: "asc" },
     });
@@ -138,7 +156,8 @@ export class IngestionService {
     const doc = await this.prisma.document.findUnique({ where: { id: documentId } });
     if (!doc) return;
     const started = Date.now();
-    await this.prisma.document.update({ where: { id: documentId }, data: { status: "PROCESSING", error: null } });
+    const claimed = await this.prisma.document.updateMany({ where: { id: documentId }, data: { status: "PROCESSING", error: null } });
+    if (claimed.count === 0) return; // deleted in the meantime
 
     try {
       const bytes = await readFile(this.filePath(documentId)).catch(() => {
@@ -147,6 +166,9 @@ export class IngestionService {
       const extracted = await extractDocument(doc.filename, bytes);
       const chunks = chunkDocument(extracted.pages, this.opts);
       if (chunks.length === 0) throw badRequest("Document contains no indexable text");
+      if (chunks.length > MAX_CHUNKS_PER_DOCUMENT) {
+        throw badRequest(`Document is too large to index (${chunks.length} chunks; the limit is ${MAX_CHUNKS_PER_DOCUMENT})`);
+      }
 
       const vectors = await this.embeddings.embedDocuments(chunks.map((c) => c.content));
       const points: VectorPoint[] = chunks.map((chunk, i) => ({

@@ -94,6 +94,14 @@ describe("chunkDocument", () => {
     expect(chunks).toEqual([expect.objectContaining({ pageStart: 2, pageEnd: 2 })]);
   });
 
+  it("chunks large text without spaces in linear time (CJK, base64)", () => {
+    const cjk = "這是一個沒有空格的很長的句子".repeat(150_000); // ~2M chars, no whitespace
+    const t0 = performance.now();
+    const chunks = chunkDocument([{ pageNumber: null, text: cjk }], { chunkSizeTokens: 600, overlapTokens: 0 });
+    expect(performance.now() - t0).toBeLessThan(1500);
+    expect(chunks.map((c) => c.content).join("")).toBe(cjk);
+  });
+
   it("rejects overlap >= chunk size", () => {
     expect(() => chunkDocument([{ pageNumber: null, text: "x" }], { chunkSizeTokens: 10, overlapTokens: 10 })).toThrow();
   });

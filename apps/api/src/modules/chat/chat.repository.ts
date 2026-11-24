@@ -55,7 +55,7 @@ export class PrismaChatRepository implements ChatRepository {
       take: limit,
       select: { role: true, content: true },
     });
-    return rows.reverse();
+    return completedExchanges(rows.reverse());
   }
 
   async addUserMessage(conversationId: string, content: string): Promise<string> {
@@ -146,6 +146,15 @@ export class PrismaChatRepository implements ChatRepository {
     const { count } = await this.prisma.conversation.deleteMany({ where: { id, userId } });
     if (count === 0) throw notFound("Conversation not found");
   }
+}
+
+/**
+ * Keeps only user messages that received an answer. A turn that failed
+ * (model error, client disconnect) leaves an unanswered user message behind;
+ * replaying it would confuse the model with back-to-back user turns.
+ */
+export function completedExchanges(messages: HistoryMessage[]): HistoryMessage[] {
+  return messages.filter((m, i) => m.role === "ASSISTANT" || messages[i + 1]?.role === "ASSISTANT");
 }
 
 function toSummary(c: { id: string; title: string; createdAt: Date; updatedAt: Date }): ConversationSummaryDto {

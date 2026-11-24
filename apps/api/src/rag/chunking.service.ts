@@ -80,9 +80,10 @@ function segment(text: string, maxChars: number): Span[] {
   for (const span of spans) {
     let s = span.start;
     while (span.end - s > maxChars) {
-      let cut = text.lastIndexOf(" ", s + maxChars);
-      if (cut <= s) cut = s + maxChars; // no whitespace: hard cut
-      else cut += 1;
+      // Search only inside the current window: an unbounded lastIndexOf makes
+      // space-free text (CJK, base64) quadratic.
+      const rel = text.slice(s, s + maxChars + 1).lastIndexOf(" ");
+      const cut = rel > 0 ? s + rel + 1 : s + maxChars; // no whitespace: hard cut
       out.push({ start: s, end: cut });
       s = cut;
     }

@@ -212,7 +212,7 @@ describe.runIf(infraReady)("health when Ollama is down", () => {
     try {
       const res = await h.app.inject({ method: "GET", url: "/api/health" });
       expect(res.statusCode).toBe(503);
-      expect(res.json().checks.ollama).toMatchObject({ ok: false, detail: expect.stringContaining("cannot reach Ollama") });
+      expect(res.json().checks.ollama).toEqual({ ok: false, detail: "cannot reach Ollama" });
     } finally {
       await h.close();
     }

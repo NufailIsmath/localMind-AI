@@ -13,7 +13,7 @@ export interface ToolContext {
   conversationId: string;
   signal: AbortSignal;
   /** Registers retrieved chunks as citable sources; returns their refs (S1, S2…). */
-  addSources(chunks: RetrievedChunk[]): string[];
+  addSources(chunks: RetrievedChunk[], query?: string): string[];
 }
 
 export interface ToolDefinition<S extends z.ZodType = z.ZodType> {

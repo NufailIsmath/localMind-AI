@@ -150,7 +150,9 @@ export class OllamaClient {
     try {
       return (await res.json()) as T;
     } catch (err) {
-      throw this.wrapError(err, signal);
+      if (signal.aborted) throw this.wrapError(err, signal);
+      // A garbled 200 response is not a connectivity problem and should not be retried.
+      throw new UpstreamError("ollama", `invalid JSON response from ${path}`, res.status, { cause: err });
     }
   }
 
@@ -200,7 +202,7 @@ export class OllamaClient {
       return reason instanceof Error ? reason : new DOMException("Aborted", "AbortError");
     }
     const message = err instanceof Error ? err.message : String(err);
-    return new UpstreamError("ollama", `cannot reach Ollama at ${this.host} (${message})`, undefined, { cause: err });
+    return new UpstreamError("ollama", `cannot reach Ollama (${message})`, undefined, { cause: err });
   }
 }
 

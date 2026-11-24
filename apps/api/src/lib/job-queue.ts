@@ -14,9 +14,13 @@ export class JobQueue {
     private readonly onError: (key: string, err: unknown) => void = () => {},
   ) {}
 
-  /** Enqueue a job. Jobs with a key that is already queued/running are ignored. */
+  /**
+   * Enqueue a job. A key that is already *queued* is ignored; a key that is
+   * currently *running* is queued again and starts once the running job ends
+   * (so a re-index requested mid-run is never dropped).
+   */
   push(key: string, run: () => Promise<void>): boolean {
-    if (this.active.has(key) || this.pending.some((j) => j.key === key)) return false;
+    if (this.pending.some((j) => j.key === key)) return false;
     this.pending.push({ key, run });
     this.drain();
     return true;
@@ -33,8 +37,10 @@ export class JobQueue {
   }
 
   private drain(): void {
-    while (this.active.size < this.concurrency && this.pending.length) {
-      const job = this.pending.shift()!;
+    while (this.active.size < this.concurrency) {
+      const idx = this.pending.findIndex((j) => !this.active.has(j.key));
+      if (idx < 0) break;
+      const [job] = this.pending.splice(idx, 1) as [{ key: string; run: () => Promise<void> }];
       this.active.add(job.key);
       void job
         .run()
