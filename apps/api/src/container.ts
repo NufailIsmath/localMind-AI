@@ -14,6 +14,7 @@ import { createToolRegistry } from "./modules/tools/index.js";
 import type { ToolRegistry } from "./modules/tools/tool.registry.js";
 import { IngestionService } from "./rag/ingestion.service.js";
 import { ClassificationService } from "./rag/classification.service.js";
+import { LeaveService, PrismaLeaveDataSource } from "./modules/leave/leave.service.js";
 import { RetrievalService } from "./rag/retrieval.service.js";
 import { QdrantVectorStore, type VectorStore } from "./rag/vector.service.js";
 
@@ -38,6 +39,7 @@ export interface Services {
   auth: AuthService;
   access: AccessService;
   accessRequests: AccessRequestService;
+  leave: LeaveService;
 }
 
 /** Infrastructure adapters that tests may replace. */
@@ -105,7 +107,9 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
       ? undefined
       : new ClassificationService(config.rag.classificationSuggestions === "model" ? llm : undefined, log),
   );
+  const leave = new LeaveService(prisma, new PrismaLeaveDataSource(prisma), access, { managerGroup: config.leaveManagerGroup });
   const tools = createToolRegistry({
+    leave,
     prisma,
     retrieval,
     timeoutMs: config.orchestrator.toolTimeoutMs,
@@ -121,5 +125,5 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
   );
   const auth = new AuthService(prisma, config.auth.registration);
 
-  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests };
+  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests, leave };
 }

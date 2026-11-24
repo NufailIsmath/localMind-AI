@@ -33,6 +33,7 @@ Two assumptions drive the design:
 | Parsers | pdf.js 6.4 via unpdf (serverless build without `eval`; not affected by CVE-2024-4367); mammoth for DOCX; `npm audit`: 0 vulnerabilities | — |
 | Transport | CORS allow-list; Helmet security headers; 1 MB JSON body limit; Bearer tokens (no cookies, so no CSRF); infra ports bound to 127.0.0.1 | `app.ts`, `infrastructure/` |
 | Info leakage | Generic 500s; anonymous `/api/health` returns up/down only | `modules/health/` |
+| Personal (leave) data | Self-service tools have no user parameter; identity comes from the session; management needs the HR group or admin; CSV import validated all-or-nothing; every change audited | `modules/leave/`, `tools/leave.tools.ts` |
 | Audit | Sharing, access, grants, requests, group/user changes, injection detections, notice-limit hits | `AuditEvent` table, admin panel |
 
 ## How it's tested
@@ -68,6 +69,12 @@ Two assumptions drive the design:
 | Low | Sign-up revealed whether an email was registered | First-user sign-up by default, admin "Add person", vague duplicate message |
 | Low | Repeated questions could map which restricted topics exist | Per-user hourly notice cap (audited); one above-clearance notice per answer; silent mode documented |
 | Low | Unauthenticated health endpoint exposed model names | Details now require a token |
+
+**Round 3 (while building leave balances).** Found and fixed:
+
+| Severity | Finding | Fix |
+|---|---|---|
+| Low | Many private documents could silence "that's confidential" notices. The unfiltered candidate search took the top 10 matches across *all* documents, so a pile of private look-alikes could push the real shared document out of the shortlist. | The candidate search now only considers shared (team or organisation) documents the user doesn't own. Regression test verified to fail without the fix. |
 
 Also hardened proactively: the prompt-injection detector, bidi/zero-width filename stripping, and browser `%22` filename decoding.
 

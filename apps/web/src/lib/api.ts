@@ -1,4 +1,7 @@
 import type {
+  LeaveBalanceDto,
+  LeavePersonSummaryDto,
+  LeaveType,
   AccessRequestDto,
   ApiErrorBody,
   AuditEventDto,
@@ -48,7 +51,7 @@ export class ApiError extends Error {
   }
 }
 
-export type AdminUserDto = UserDto;
+export type AdminUserDto = Omit<UserDto, "canManageLeave">;
 
 async function request<T>(path: string, init: { method?: string; token?: string | null; json?: unknown; form?: FormData } = {}): Promise<T> {
   const headers: Record<string, string> = {};
@@ -107,6 +110,22 @@ export const api = {
     list: (token: string) => request<{ incoming: AccessRequestDto[]; outgoing: AccessRequestDto[] }>("/api/access-requests", { token }),
     decide: (token: string, id: string, approve: boolean) =>
       request<AccessRequestDto>(`/api/access-requests/${id}/${approve ? "approve" : "deny"}`, { method: "POST", token }),
+  },
+  leave: {
+    me: (token: string, year?: number) => request<LeaveBalanceDto>(`/api/leave/me${year ? `?year=${year}` : ""}`, { token }),
+    people: (token: string, year: number) => request<LeavePersonSummaryDto[]>(`/api/leave/manage/people?year=${year}`, { token }),
+    setAllowance: (
+      token: string,
+      body: { userId: string; year: number; leaveType: LeaveType; entitledDays: number; carriedOverDays?: number; carryOverExpiresOn?: string | null; adjustmentDays?: number },
+    ) => request<void>("/api/leave/manage/allowances", { method: "PUT", token, json: body }),
+    addEntry: (token: string, body: { userId: string; leaveType: LeaveType; startDate: string; endDate: string; days?: number; note?: string }) =>
+      request<unknown>("/api/leave/manage/entries", { method: "POST", token, json: body }),
+    cancelEntry: (token: string, id: string) => request<void>(`/api/leave/manage/entries/${id}`, { method: "DELETE", token }),
+    holidays: (token: string, year: number) => request<{ date: string; name: string }[]>(`/api/leave/holidays?year=${year}`, { token }),
+    addHoliday: (token: string, date: string, name: string) => request<void>("/api/leave/manage/holidays", { method: "POST", token, json: { date, name } }),
+    removeHoliday: (token: string, date: string) => request<void>(`/api/leave/manage/holidays/${date}`, { method: "DELETE", token }),
+    importCsv: (token: string, kind: "allowances" | "entries", csv: string) =>
+      request<{ imported: number }>("/api/leave/manage/import", { method: "POST", token, json: { kind, csv } }),
   },
   admin: {
     users: (token: string) => request<AdminUserDto[]>("/api/admin/users", { token }),

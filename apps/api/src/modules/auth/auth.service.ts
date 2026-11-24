@@ -7,8 +7,8 @@ import type { UserProfile } from "../access/access.service.js";
 // Pre-computed hash used to equalise timing when the email doesn't exist.
 let dummyHash: Promise<string> | undefined;
 
-export function toUserDto(u: UserProfile): UserDto {
-  return { id: u.id, email: u.email, role: u.role, clearance: u.clearance, groups: u.groups, createdAt: u.createdAt.toISOString() };
+export function toUserDto(u: UserProfile, canManageLeave = false): UserDto {
+  return { id: u.id, email: u.email, role: u.role, clearance: u.clearance, groups: u.groups, canManageLeave, createdAt: u.createdAt.toISOString() };
 }
 
 export class AuthService {

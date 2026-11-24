@@ -114,12 +114,59 @@ async function main() {
   await prisma.accessRequest.deleteMany({ where: { documentId: { in: ids } } });
   const { count } = await prisma.documentUserAccess.deleteMany({ where: { documentId: { in: ids } } });
   if (count) for (const id of ids) await app.services.access.syncVectorAccess(id);
+  await seedLeave(prisma, userIds);
   await app.close();
 
   console.log(`\nDemo organisation ready. Sign in with any of these (password "${PASSWORD}"):`);
   console.table(PEOPLE.map((p) => ({ email: p.email, role: p.role, clearance: p.clearance, groups: p.groups.join(", ") })));
+  console.log('Try: "How many leave days do I have?" as intern@demo.local (hr@demo.local can open Manage leave).');
   console.log('Try: "What is the CEO salary?" as intern@demo.local, then as hr@demo.local.');
   console.log('Then: "What do new hires get on day one?" as engineer@demo.local → Ask for access → approve as hr@demo.local.\n');
+}
+
+/**
+ * Demo leave for the current year (reset on every run): 21 annual days per the
+ * handbook, 14 sick days, 3 days carried over expiring 31 March, some leave
+ * taken and some booked, plus New Year's Day and Christmas as holidays.
+ */
+async function seedLeave(prisma: import("@prisma/client").PrismaClient, userIds: Record<string, string>) {
+  const year = new Date().getFullYear();
+  const d = (md: string) => new Date(`${year}-${md}T00:00:00Z`);
+  const ids = Object.values(userIds);
+  await prisma.leaveEntry.deleteMany({ where: { userId: { in: ids } } });
+  for (const [date, name] of [["01-01", "New Year's Day"], ["12-25", "Christmas Day"]] as const) {
+    await prisma.companyHoliday.upsert({ where: { date: d(date) }, update: { name }, create: { date: d(date), name } });
+  }
+  for (const userId of ids) {
+    for (const [leaveType, entitledHalfDays, carriedHalfDays] of [["ANNUAL", 42, 6], ["SICK", 28, 0]] as const) {
+      const data = { entitledHalfDays, carriedHalfDays, carryOverExpiresOn: carriedHalfDays ? d("03-31") : null, adjustmentHalfDays: 0 };
+      await prisma.leaveAllowance.upsert({
+        where: { userId_year_leaveType: { userId, year, leaveType } },
+        update: data,
+        create: { userId, year, leaveType, ...data },
+      });
+    }
+  }
+  const entries: Record<string, [string, string, number, "ANNUAL" | "SICK", string?][]> = {
+    "intern@demo.local": [
+      ["02-09", "02-10", 4, "ANNUAL", "Family visit"],
+      ["07-13", "07-17", 10, "ANNUAL", "Summer break"],
+      ["05-06", "05-06", 2, "SICK"],
+      ["12-21", "12-23", 6, "ANNUAL", "Year-end"],
+    ],
+    "engineer@demo.local": [
+      ["03-16", "03-20", 10, "ANNUAL", "Spring trip"],
+      ["08-10", "08-11", 4, "ANNUAL"],
+    ],
+    "hr@demo.local": [["04-06", "04-10", 10, "ANNUAL"]],
+  };
+  for (const [email, list] of Object.entries(entries)) {
+    for (const [from, to, halfDays, leaveType, note] of list) {
+      await prisma.leaveEntry.create({
+        data: { userId: userIds[email]!, leaveType, startDate: d(from), endDate: d(to), halfDays, source: "IMPORT", note: note ?? null },
+      });
+    }
+  }
 }
 
 main().catch((err) => {

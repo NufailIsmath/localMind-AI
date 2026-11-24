@@ -12,6 +12,7 @@ import type { AccessPrincipal } from "./modules/access/access.policy.js";
 import { toPrincipal, type UserProfile } from "./modules/access/access.service.js";
 import { accessRequestRoutes } from "./modules/access/access-requests.routes.js";
 import { adminRoutes } from "./modules/admin/admin.routes.js";
+import { leaveRoutes } from "./modules/leave/leave.routes.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { chatRoutes } from "./modules/chat/chat.routes.js";
 import { documentRoutes } from "./modules/documents/documents.routes.js";
@@ -66,7 +67,7 @@ export async function buildApp(config: AppConfig, opts: BuildAppOptions = {}): P
   await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } });
   await app.register(cors, {
     origin: config.corsOrigins,
-    methods: ["GET", "POST", "PATCH", "DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["authorization", "content-type"],
     maxAge: 600,
   });
@@ -123,6 +124,7 @@ export async function buildApp(config: AppConfig, opts: BuildAppOptions = {}): P
   await app.register(toolRoutes, { prefix: "/api/tools" });
   await app.register(adminRoutes, { prefix: "/api/admin" });
   await app.register(accessRequestRoutes, { prefix: "/api/access-requests" });
+  await app.register(leaveRoutes, { prefix: "/api/leave" });
 
   app.addHook("onClose", async () => {
     await services.ingestion.onIdle();

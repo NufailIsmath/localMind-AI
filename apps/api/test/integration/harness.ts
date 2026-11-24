@@ -44,7 +44,7 @@ export async function createHarness(env: Record<string, string> = {}, { reset = 
   const app = await buildApp(config, { logger: false });
   await app.services.vectors.ensureCollection();
   if (reset) await app.services.prisma.$executeRawUnsafe(
-    'TRUNCATE "AuditEvent", "DocumentGroupAccess", "GroupMembership", "Group", "ToolExecution", "Message", "Conversation", "DocumentChunk", "Document", "User" CASCADE',
+    'TRUNCATE "CompanyHoliday", "LeaveEntry", "LeaveAllowance", "AuditEvent", "DocumentGroupAccess", "GroupMembership", "Group", "ToolExecution", "Message", "Conversation", "DocumentChunk", "Document", "User" CASCADE',
   );
 
   let n = 0;

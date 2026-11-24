@@ -45,7 +45,12 @@ export interface VectorStore {
    * Access-UNFILTERED search returning only document ids and scores — never
    * content. Used solely to tell a user "a confidential document matched".
    */
-  matchingDocuments(vector: number[], limit: number, scoreThreshold: number): Promise<{ documentId: string; score: number }[]>;
+  matchingDocuments(
+    vector: number[],
+    limit: number,
+    scoreThreshold: number,
+    scope: { excludeUserId: string },
+  ): Promise<{ documentId: string; score: number }[]>;
   deleteByDocument(documentId: string): Promise<void>;
   /** Rewrites the access fields of every chunk of a document (after sharing changes). */
   setAccess(documentId: string, access: AccessPayload): Promise<void>;
@@ -133,12 +138,18 @@ export class QdrantVectorStore implements VectorStore {
     }));
   }
 
-  async matchingDocuments(vector: number[], limit: number, scoreThreshold: number) {
+  async matchingDocuments(vector: number[], limit: number, scoreThreshold: number, scope: { excludeUserId: string }) {
     const res = await this.call("matchingDocuments", () =>
       this.client.query(this.collection, {
         query: vector,
         limit,
         score_threshold: scoreThreshold,
+        // Only shared documents can ever be acknowledged, so only they may compete for
+        // the candidate slots (otherwise many similar private files could crowd them out).
+        filter: {
+          must: [{ key: "visibility", match: { any: ["ORGANIZATION", "GROUPS"] } }],
+          must_not: [{ key: "userId", match: { value: scope.excludeUserId } }],
+        },
         with_payload: { include: ["documentId"] },
       }),
     );

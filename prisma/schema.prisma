@@ -53,6 +53,26 @@ enum AccessRequestStatus {
   DENIED
 }
 
+enum LeaveType {
+  ANNUAL
+  SICK
+  PARENTAL
+  UNPAID
+  OTHER
+}
+
+/// APPROVED entries count against the balance. (Option 3, requests in the
+/// app, will add PENDING/REJECTED without changing how balances work.)
+enum LeaveEntryStatus {
+  APPROVED
+  CANCELLED
+}
+
+enum LeaveEntrySource {
+  MANUAL
+  IMPORT
+}
+
 enum ToolExecutionStatus {
   SUCCESS
   ERROR
@@ -75,6 +95,8 @@ model User {
   documentGrants  DocumentUserAccess[] @relation("grantee")
   accessRequests  AccessRequest[]      @relation("requester")
   decidedRequests AccessRequest[]      @relation("decider")
+  leaveAllowances LeaveAllowance[]
+  leaveEntries    LeaveEntry[]
 }
 
 /// An individual grant (e.g. an approved access request). Clearance still applies.
@@ -197,27 +219,27 @@ model Message {
 }
 
 model Document {
-  id             String             @id @default(uuid()) @db.Uuid
-  userId         String             @db.Uuid
-  filename       String
-  mimeType       String
-  sizeBytes      Int
+  id                      String             @id @default(uuid()) @db.Uuid
+  userId                  String             @db.Uuid
+  filename                String
+  mimeType                String
+  sizeBytes               Int
   /// sha256 of the uploaded bytes, used to reject duplicate uploads
-  contentHash    String
-  status         DocumentStatus     @default(PENDING)
-  visibility     DocumentVisibility @default(PRIVATE)
-  classification Classification     @default(INTERNAL)
+  contentHash             String
+  status                  DocumentStatus     @default(PENDING)
+  visibility              DocumentVisibility @default(PRIVATE)
+  classification          Classification     @default(INTERNAL)
   /// Classification suggested by the classifier after indexing (only kept when higher than `classification`)
   suggestedClassification Classification?
   /// Human-readable reasons for the suggestion
   suggestionReasons       Json?
-  error          String?
-  pageCount      Int?
-  chunkCount     Int                @default(0)
+  error                   String?
+  pageCount               Int?
+  chunkCount              Int                @default(0)
   /// Embedding model used to index this document (re-index when it changes)
-  embeddingModel String?
-  uploadedAt     DateTime           @default(now())
-  indexedAt      DateTime?
+  embeddingModel          String?
+  uploadedAt              DateTime           @default(now())
+  indexedAt               DateTime?
 
   user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   chunks         DocumentChunk[]
@@ -264,4 +286,52 @@ model ToolExecution {
   @@index([conversationId, createdAt])
   @@index([messageId])
   @@index([toolName, createdAt])
+}
+
+/// A person's leave allowance for one year and leave type. All amounts are in
+/// HALF-DAY units (Int) so half days add up exactly: 21 days = 42.
+model LeaveAllowance {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @db.Uuid
+  year               Int
+  leaveType          LeaveType
+  entitledHalfDays   Int
+  carriedHalfDays    Int       @default(0)
+  /// Carried-over days not used by this date are forfeited
+  carryOverExpiresOn DateTime? @db.Date
+  /// Manual corrections (+/-), e.g. bought or gifted days
+  adjustmentHalfDays Int       @default(0)
+  note               String?
+  updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, year, leaveType])
+}
+
+/// Leave taken or booked. Days default to working days in the range
+/// (weekends and company holidays excluded) but can be overridden (half days).
+model LeaveEntry {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @db.Uuid
+  leaveType   LeaveType
+  startDate   DateTime         @db.Date
+  endDate     DateTime         @db.Date
+  halfDays    Int
+  status      LeaveEntryStatus @default(APPROVED)
+  source      LeaveEntrySource @default(MANUAL)
+  note        String?
+  createdById String?          @db.Uuid
+  createdAt   DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startDate])
+}
+
+/// Company holidays (not counted as leave days).
+model CompanyHoliday {
+  id   String   @id @default(uuid()) @db.Uuid
+  date DateTime @unique @db.Date
+  name String
 }

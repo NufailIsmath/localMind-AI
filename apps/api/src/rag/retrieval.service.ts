@@ -72,7 +72,7 @@ export class RetrievalService {
     const chunks = await this.searchReadable(principal, vector, opts);
     if (!this.notices) return { chunks, withheld: [] };
     const readable = new Set(chunks.map((c) => c.documentId));
-    const candidates = (await this.vectors.matchingDocuments(vector, 10, this.notices.scoreThreshold)).filter(
+    const candidates = (await this.vectors.matchingDocuments(vector, 10, this.notices.scoreThreshold, { excludeUserId: principal.userId })).filter(
       (c) => !readable.has(c.documentId),
     );
     const withheld = candidates.length ? await this.notices.finder(principal, candidates) : [];

@@ -69,7 +69,9 @@ export function ChatView({
   onConversationStarted,
   onTurnFinished,
   onUnauthorized,
+  prefill,
 }: {
+  prefill?: { text: string; n: number } | null;
   token: string;
   conversationId: string | null;
   onConversationStarted: (id: string) => void;
@@ -86,6 +88,11 @@ export function ChatView({
   const streamingConversation = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const busy = draft !== null;
+
+  // Prefill the composer (e.g. "Plan time off" from the leave card) without sending.
+  useEffect(() => {
+    if (prefill) setInput(prefill.text);
+  }, [prefill]);
 
   // Load history when switching conversations (but not for the one we're streaming into).
   useEffect(() => {

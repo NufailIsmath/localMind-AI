@@ -33,8 +33,9 @@ export class InMemoryVectorStore implements VectorStore {
       .sort((a, b) => b.score - a.score)
       .slice(0, params.limit);
   }
-  async matchingDocuments(vector: number[], limit: number, scoreThreshold: number) {
+  async matchingDocuments(vector: number[], limit: number, scoreThreshold: number, scope: { excludeUserId: string }) {
     return [...this.points.values()]
+      .filter((p) => (p.payload.visibility === "ORGANIZATION" || p.payload.visibility === "GROUPS") && p.payload.userId !== scope.excludeUserId)
       .map((p) => ({ documentId: p.payload.documentId, score: cosine(p.vector, vector) }))
       .filter((h) => h.score >= scoreThreshold)
       .sort((a, b) => b.score - a.score)

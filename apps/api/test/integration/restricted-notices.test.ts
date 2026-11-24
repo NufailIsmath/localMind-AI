@@ -92,6 +92,18 @@ describe.runIf(infraReady)("restricted-content notices and access requests", () 
     await api("hr", "DELETE", `/api/documents/${(extra.body as DocumentDto).id}`);
   });
 
+  it("can't be silenced by flooding the index with similar private files", async () => {
+    // Regression: candidates used to be the top 10 matches across ALL documents, so a pile of
+    // private look-alikes could push the real shared document out and suppress the notice.
+    for (let i = 0; i < 12; i++) {
+      // Near-exact matches for the question (whitespace varies so each file is distinct) outrank the real document.
+      await h.upload(t.eng, `decoy-${i}.txt`, `What is the CEO salary?${" ".repeat(i + 1)}`);
+    }
+    await h.waitForIndexing();
+    const res = await chat("intern", "What is the CEO salary?");
+    expect(res.restricted).toEqual([expect.objectContaining({ reason: "above_clearance", sharedWith: ["HR"] })]);
+  });
+
   it("never acknowledges someone's private files", async () => {
     const res = await chat("intern", "anniversary flowers restaurant reminder");
     expect(res.restricted).toEqual([]);

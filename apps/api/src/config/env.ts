@@ -58,6 +58,8 @@ const EnvSchema = z
     /** Minimum similarity before a restricted document is acknowledged (keeps probing imprecise). */
     RESTRICTED_NOTICE_SCORE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
     /** model: rules + local model; rules: pattern rules only; off: no suggestions. */
+    /** Members of this group (plus admins) manage everyone's leave records. */
+    LEAVE_MANAGER_GROUP: z.string().min(1).default("HR"),
     CLASSIFICATION_SUGGESTIONS: z.enum(["model", "rules", "off"]).default("model"),
     MAX_UPLOAD_MB: z.coerce.number().positive().default(20),
     UPLOAD_DIR: z.string().default("./data/uploads"),
@@ -81,6 +83,7 @@ export interface AppConfig {
   corsOrigins: string[];
   logLevel: Env["LOG_LEVEL"];
   rateLimitEnabled: boolean;
+  leaveManagerGroup: string;
   auth: { jwtSecret: string; jwtExpiresIn: string; registration: "open" | "closed" | "first-user" };
   databaseUrl: string;
   qdrant: { url: string; apiKey?: string; collection: string };
@@ -129,6 +132,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     corsOrigins: e.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean),
     logLevel: e.LOG_LEVEL,
     rateLimitEnabled: e.RATE_LIMIT_ENABLED,
+    leaveManagerGroup: e.LEAVE_MANAGER_GROUP,
     auth: { jwtSecret: e.JWT_SECRET, jwtExpiresIn: e.JWT_EXPIRES_IN, registration: e.ALLOW_REGISTRATION },
     databaseUrl: e.DATABASE_URL,
     qdrant: { url: e.QDRANT_URL, apiKey: e.QDRANT_API_KEY || undefined, collection: e.QDRANT_COLLECTION },

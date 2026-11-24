@@ -23,7 +23,67 @@ export interface UserDto {
   /** Highest classification this user may read when a document is shared with them. */
   clearance: Classification;
   groups: GroupRefDto[];
+  /** HR team members and admins can manage everyone's leave records. */
+  canManageLeave: boolean;
   createdAt: string;
+}
+
+export type LeaveType = "ANNUAL" | "SICK" | "PARENTAL" | "UNPAID" | "OTHER";
+
+export interface LeaveBalance {
+  year: number;
+  leaveType: LeaveType;
+  entitled: number;
+  carriedOver: number;
+  carryOverExpiresOn: string | null;
+  carryOverForfeited: number;
+  carryOverToUseBeforeExpiry: number;
+  adjustments: number;
+  total: number;
+  taken: number;
+  booked: number;
+  remaining: number;
+}
+
+export interface LeaveEntryDto {
+  id: string;
+  leaveType: LeaveType;
+  startDate: string;
+  endDate: string;
+  days: number;
+  status: "APPROVED" | "CANCELLED";
+  note: string | null;
+}
+
+export interface LeaveBalanceDto {
+  year: number;
+  asOf: string;
+  /** False until HR has set up an allowance for this person and year. */
+  configured: boolean;
+  balances: LeaveBalance[];
+  upcoming: LeaveEntryDto[];
+  taken: LeaveEntryDto[];
+}
+
+export interface LeavePlanDto {
+  leaveType: LeaveType;
+  startDate: string;
+  endDate: string;
+  workingDays: number;
+  workingDates: string[];
+  holidaysInRange: { date: string; name: string }[];
+  configured: boolean;
+  remainingBefore: number | null;
+  remainingAfter: number | null;
+  warnings: string[];
+}
+
+export interface LeavePersonSummaryDto {
+  userId: string;
+  email: string;
+  annual: LeaveBalance | null;
+  allowances: { leaveType: LeaveType; entitledDays: number; carriedOverDays: number; carryOverExpiresOn: string | null; adjustmentDays: number }[];
+  entries: LeaveEntryDto[];
 }
 
 export interface GroupDto extends GroupRefDto {

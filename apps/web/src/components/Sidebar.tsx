@@ -2,6 +2,7 @@
 
 import type { ConversationSummaryDto, UserDto } from "@clbuddy/shared";
 import { CLASSIFICATION_LABELS, relativeTime } from "@/lib/format";
+import { MyLeave } from "./MyLeave";
 
 export function Sidebar({
   user,
@@ -12,6 +13,9 @@ export function Sidebar({
   onDelete,
   onLogout,
   onOpenAdmin,
+  onOpenLeave,
+  token,
+  onAsk,
 }: {
   user: UserDto;
   conversations: ConversationSummaryDto[];
@@ -21,6 +25,9 @@ export function Sidebar({
   onDelete: (id: string) => void;
   onLogout: () => void;
   onOpenAdmin: () => void;
+  onOpenLeave: () => void;
+  token: string;
+  onAsk: (q: string) => void;
 }) {
   return (
     <nav className="sidebar" aria-label="Conversations">
@@ -46,6 +53,7 @@ export function Sidebar({
         ))}
         {conversations.length === 0 && <li className="muted small pad">No conversations yet.</li>}
       </ul>
+      <MyLeave token={token} onAsk={onAsk} />
       <div className="account">
         <div className="small">
           <div className="ellipsis" title={user.email}>
@@ -57,6 +65,11 @@ export function Sidebar({
           {user.groups.length > 0 && <div className="muted ellipsis">{user.groups.map((g) => g.name).join(", ")}</div>}
         </div>
         <div className="account-actions">
+          {user.canManageLeave && (
+            <button type="button" className="link" onClick={onOpenLeave}>
+              Manage leave
+            </button>
+          )}
           {user.role === "ADMIN" && (
             <button type="button" className="link" onClick={onOpenAdmin}>
               Organization

@@ -83,6 +83,14 @@ function decide(messages: OllamaMessage[], toolNames: Set<string>): { content: s
     return { content: parts.join("\n\n"), toolCalls: [] };
   }
 
+  const dates = [...userText.matchAll(/\d{4}-\d{2}-\d{2}/g)].map((m) => m[0]);
+  if (dates.length >= 2 && /\b(?:leave|off|holiday|vacation)\b/i.test(userText) && toolNames.has("check_leave_dates")) {
+    return call("check_leave_dates", { startDate: dates[0], endDate: dates[1] });
+  }
+  if (/\b(?:do i have|have i got|i have left|my (?:annual |sick )?(?:leave|holidays?|vacation|pto)|leave balance)\b/i.test(userText) && toolNames.has("get_my_leave_balance")) {
+    return call("get_my_leave_balance", /\b(20\d\d)\b/.test(userText) ? { year: Number(userText.match(/\b(20\d\d)\b/)![1]) } : {});
+  }
+
   if (wantsDraft) {
     const team = userText.match(TEAM)?.[1];
     if (team && toolNames.has("find_team")) return call("find_team", { query: team });
@@ -196,6 +204,32 @@ function answerFromTool(p: ToolPayload, question: string): string {
       return t
         ? `That's ${t.team}${t.handles ? ` (they handle ${String(t.handles).toLowerCase()})` : ""}. You can reach them at ${t.contacts.join(", ") || "their team channel"}.`
         : "I couldn't find a team for that.";
+    }
+    case "get_my_leave_balance": {
+      const annual = (d.balances ?? []).find((b: any) => b.leaveType === "ANNUAL");
+      if (!annual) return `Hmm, HR hasn't set up your leave allowance for ${d.year} yet, so I can't tell you a balance. Want me to draft a quick note to HR?`;
+      const parts = [`${annual.entitled} entitled`];
+      if (annual.carriedOver) {
+        parts.push(
+          annual.carryOverForfeited
+            ? `${annual.carriedOver - annual.carryOverForfeited} of ${annual.carriedOver} carried over (${annual.carryOverForfeited} expired)`
+            : `${annual.carriedOver} carried over`,
+        );
+      }
+      if (annual.adjustments) parts.push(`${annual.adjustments} adjustment`);
+      const lines = [
+        `You have **${annual.remaining} days** of annual leave left for ${d.year} 🌴`,
+        `(${parts.join(" + ")}; ${annual.taken} taken, ${annual.booked} booked).`,
+      ];
+      if (annual.carryOverToUseBeforeExpiry > 0) lines.push(`Heads-up: ${annual.carryOverToUseBeforeExpiry} carried-over days expire on ${annual.carryOverExpiresOn}, so use them before then!`);
+      if (d.upcoming?.length) lines.push(`Coming up: ${d.upcoming.map((u: any) => `${u.startDate} to ${u.endDate}`).join(", ")}.`);
+      return lines.join(" ");
+    }
+    case "check_leave_dates": {
+      const hol = d.holidaysInRange?.length ? ` (${d.holidaysInRange.map((h: any) => h.name).join(", ")} doesn't count)` : "";
+      const after = d.remainingAfter === null ? "" : ` You'd have ${d.remainingAfter} days left (you have ${d.remainingBefore} now).`;
+      const warn = d.warnings?.length ? ` ⚠️ ${d.warnings.join(" ")}` : "";
+      return `${d.startDate} to ${d.endDate} is ${d.workingDays} working day(s)${hol}.${after}${warn} Want me to draft the leave request to HR?`;
     }
     case "calculate":
       return `The result of ${d.expression} is **${d.result}**.`;

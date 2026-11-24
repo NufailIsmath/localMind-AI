@@ -1207,6 +1207,132 @@ button:disabled {
   font-size: 13px;
 }
 
+/* ---------- Leave ---------- */
+.my-leave {
+  margin: 0 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.my-leave-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 14px;
+}
+.my-leave-head > span:nth-child(2) {
+  flex: 1;
+}
+.my-leave-body {
+  padding: 0 12px 10px;
+  display: grid;
+  gap: 6px;
+}
+.leave-dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  margin: 0;
+}
+.leave-dl dt {
+  color: var(--muted);
+}
+.leave-dl dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.leave-warn {
+  margin: 0;
+  color: var(--warn);
+  font-weight: 600;
+}
+.year-pick input {
+  width: 80px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: var(--surface);
+}
+.notice {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.row-selected {
+  background: var(--accent-soft);
+}
+.person-editor {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+.person-editor h3 {
+  margin: 0;
+}
+.leave-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.leave-form > strong {
+  flex-basis: 100%;
+}
+.leave-form label {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.leave-form input,
+.leave-form select {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 13px;
+  color: var(--text);
+  max-width: 150px;
+}
+.entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.entry-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding: 4px 0;
+}
+.entry-list li.cancelled {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.import textarea {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--surface);
+  margin: 8px 0;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1100px) {
   .app {

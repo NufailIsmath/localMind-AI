@@ -15,7 +15,7 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 | **Backend** | Node.js · TypeScript · Fastify · Zod · Prisma |
 | **Data** | Qdrant (vectors) · PostgreSQL (users, documents, chats, tool audit log) |
 | **Frontend** | Next.js 16 · React 19 (streaming chat UI), themed to match [codinglegends.io](https://www.codinglegends.io): brand blue `#3A7CC4`, sky/cyan gradient `#78D4E4 → #58BCF8`, black pill buttons; light and dark mode |
-| **Testing** | Vitest — 102 unit + 118 integration tests (real Postgres/Qdrant), 13 Playwright E2E, security suite, RAG evaluation harness |
+| **Testing** | Vitest — 112 unit + 134 integration tests (real Postgres/Qdrant), 18 Playwright E2E, security suite, RAG evaluation harness |
 | **Infra** | Docker Compose |
 
 ## What CL Buddy does for people
@@ -25,6 +25,8 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 | *"My laptop isn't working, what should I do?"* | Acknowledges it, checks the IT guide, gives numbered steps with citations (restart → ticket with asset tag → loaner laptop), says who handles it, offers to draft the ticket email |
 | *"Draft an email to HR asking for annual leave from 2 to 6 March"* | Looks up who handles leave (`find_team`), then writes a draft addressed to the real HR contact, shown as an **email card** with **Copy** and **Open in email app** |
 | *"How do I claim back expenses?"* | Answers from the handbook (deadline, receipts, approval limits) and offers to draft the claim note |
+| *"How many leave days do I have?"* | Reads **your own** leave record: *"You have **13 days** of annual leave left for 2026 🌴 (21 entitled + 2 of 3 carried over; 7 taken, 3 booked)"*, and flags carried-over days about to expire |
+| *"If I take 28–31 December, what's left?"* | Counts working days (skipping weekends and company holidays), checks clashes, shows the balance before/after, then offers to draft the request to HR |
 | *"What's the CEO's salary?"* (as an intern) | *"Ha, good one, but my lips are sealed! 🤐"* (see [Access control](#access-control)) |
 | *"Turn these notes into a meeting agenda"*, *"Make this email more polite"* | Rewrites, summarises, proofreads, builds checklists and agendas |
 
@@ -33,6 +35,41 @@ How it does that:
 - **Drafting.** Emails come back in a structured ```email block (To / Cc / Subject / body) that the UI renders as a card. Recipients are only ever addresses the user gave or the directory returned, never invented; unknown details become `[placeholders]`. "Open in email app" uses `mailto:`, which only pre-fills your own mail client; nothing is sent until you press Send there.
 - **Who handles what.** Admins describe each team's responsibilities in the Organization panel (e.g. *IT Support: laptops, accounts, passwords*). `find_team` uses that, plus team membership, to route questions to real contacts.
 - **Personal context.** The buddy knows who it's talking to (email and teams, from the login session) so it can apply the right team's process.
+
+## Leave balances
+
+Everyone sees their own balance in a **🌴 My leave** card in the sidebar (entitlement, carry-over and its expiry, taken, booked, other leave types, upcoming dates), and can ask CL Buddy about it in chat.
+
+**How it's calculated** (per person, year and leave type, in half-day units so half days are exact):
+- **Total** = entitlement + usable carry-over + adjustments.
+- **Taken** is approved leave that has started; **booked** is approved leave still in the future.
+- **Remaining** = total − taken − booked.
+- **Carry-over** must be used by its expiry date. After that date, only the carried days actually used before it still count.
+- **Working days** exclude weekends and company holidays; half days can be recorded explicitly.
+
+**Who maintains it.** Members of the HR group (`LEAVE_MANAGER_GROUP`, default `HR`) and admins get a **Manage leave** panel:
+- a team overview;
+- editing each person's allowance;
+- recording or cancelling leave;
+- company holidays;
+- importing a spreadsheet as CSV. The import is all-or-nothing: every row is validated first, and errors are reported per row.
+
+```csv
+email,year,leave_type,entitled_days,carried_over_days,carry_over_expires,adjustment_days,note
+sam@company.com,2026,ANNUAL,21,3,2026-03-31,0,
+```
+```csv
+email,leave_type,start_date,end_date,days,note
+sam@company.com,ANNUAL,2026-03-02,2026-03-06,,Family trip
+```
+
+**Privacy.** Leave data is personal:
+- **Strictly self-only tools.** The buddy's two tools (`get_my_leave_balance`, `check_leave_dates`) take **no user parameter**, so the model can't look anyone else up, even if asked or prompt-injected.
+- **Management is HR/admin only.** Management endpoints check that role, and every change is audited.
+
+**What's next.**
+- **Option 3 (requests in the app):** add `PENDING`/`REJECTED` entry states and an approve step. The balance maths doesn't change.
+- **HR-system connection:** all reads go through a `LeaveDataSource` interface, so a BambooHR/HiBob connector can replace the local tables later.
 
 ## Features
 
@@ -223,6 +260,8 @@ All endpoints except `auth/register`, `auth/login` and `health` require `Authori
 | POST | `/api/access-requests` | Ask for access from a notice in a chat answer (`messageId`, `noticeId`, optional `note`) |
 | GET | `/api/access-requests` | `incoming` (to decide on) and `outgoing` (yours) |
 | POST | `/api/access-requests/:id/approve` · `/deny` | Decide (document owner or admin) |
+| GET | `/api/leave/me`, `/api/leave/plan` | Your own leave balance; plan dates without booking |
+| GET / PUT / POST / DELETE | `/api/leave/manage/…` | People overview, allowances, entries, holidays, CSV import (HR group or admin) |
 | GET | `/api/tools/executions` | Your tool audit log |
 | GET / POST / PATCH | `/api/admin/users`, `/api/admin/users/:id` | People: add, role, clearance, groups (admin) |
 | POST | `/api/documents/:id/suggestion/dismiss` | Keep the current label instead of the suggested one |
@@ -256,6 +295,8 @@ curl -s localhost:4000/api/chat -H "authorization: Bearer $TOKEN" -H "content-ty
 | `get_current_time` | Server clock, optional IANA time zone | everyone |
 | `list_documents` | PostgreSQL (predefined query, access-policy scoped) | everyone |
 | `find_team` | PostgreSQL: teams, what they handle, member contacts | everyone |
+| `get_my_leave_balance` | The caller's own leave record (no user parameter) | everyone |
+| `check_leave_dates` | Working days, holidays, clashes and balance after, for the caller | everyone |
 | `get_usage_stats` | PostgreSQL aggregates for your account | everyone |
 | `get_system_stats` | Instance-wide PostgreSQL aggregates | **ADMIN** |
 
@@ -353,6 +394,7 @@ All settings are environment variables validated at startup (see [`.env.example`
 | `MAX_TOOL_ROUNDS` / `MAX_TOOL_CALLS_PER_ROUND` | `5` / `5` | Bounds on the agent loop |
 | `TOOL_TIMEOUT_MS` / `LLM_TIMEOUT_MS` | `15000` / `180000` | Fault-tolerance limits |
 | `ALLOW_REGISTRATION` | `first-user` | `first-user`: sign-up closes after the first (admin) account; admins add people. `true`: always open (demos; reveals registered emails). `false`: closed |
+| `LEAVE_MANAGER_GROUP` | `HR` | Members of this group (and admins) manage everyone's leave |
 | `CLASSIFICATION_SUGGESTIONS` | `model` | `model` (rules + local model), `rules`, or `off` |
 | `RESTRICTED_NOTICE_HOURLY_LIMIT` | `30` | Per-user cap on "that's confidential" notices |
 

@@ -7,6 +7,7 @@ import { AuthForm } from "./AuthForm";
 import { ChatView } from "./ChatView";
 import { DocumentsPanel } from "./DocumentsPanel";
 import { AdminPanel } from "./AdminPanel";
+import { LeavePanel } from "./LeavePanel";
 import { HealthBadge } from "./HealthBadge";
 import { Sidebar } from "./Sidebar";
 
@@ -20,6 +21,8 @@ export function Workspace() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("chat");
   const [adminOpen, setAdminOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [prefill, setPrefill] = useState<{ text: string; n: number } | null>(null);
 
   // Admins may change their own clearance/groups; refresh the profile when the panel closes.
   const closeAdmin = useCallback(() => {
@@ -111,6 +114,13 @@ export function Workspace() {
         onDelete={(id) => void deleteConversation(id)}
         onLogout={logout}
         onOpenAdmin={() => setAdminOpen(true)}
+        onOpenLeave={() => setLeaveOpen(true)}
+        token={token}
+        onAsk={(text) => {
+          setActiveId(null);
+          setPanel("chat");
+          setPrefill((p) => ({ text, n: (p?.n ?? 0) + 1 }));
+        }}
       />
       <ChatView
         token={token}
@@ -118,8 +128,10 @@ export function Workspace() {
         onConversationStarted={setActiveId}
         onTurnFinished={refreshConversations}
         onUnauthorized={logout}
+        prefill={prefill}
       />
       <DocumentsPanel key={user.clearance + user.groups.map((g) => g.id).join()} token={token} user={user} onUnauthorized={logout} />
+      {leaveOpen && <LeavePanel token={token} onClose={() => setLeaveOpen(false)} />}
       {adminOpen && <AdminPanel token={token} currentUserId={user.id} onClose={closeAdmin} />}
     </div>
   );

@@ -34,6 +34,20 @@ export function buildSystemPrompt({ now = new Date(), tools, user }: SystemPromp
       "- Use find_team to work out which team handles something and who to contact. Only use contact details it returns; if it finds nobody, name the team to ask instead of inventing an address.",
     );
   }
+  if (names.has("get_my_leave_balance")) {
+    guidance.push(
+      "- For the user's own leave (how many days they have, carry-over, what's taken or booked) call get_my_leave_balance. Never work out a personal balance from the policy. If nothing is set up, say HR hasn't set up their allowance yet and offer to draft a note to HR.",
+      "- When they mention carried-over days that are about to expire, point it out — that's the kind of thing a good buddy flags.",
+    );
+  }
+  if (names.has("check_leave_dates")) {
+    guidance.push(
+      "- To plan time off, call check_leave_dates (resolve relative dates like \"next Friday\" with get_current_time first). Mention the working days, any holidays in the range, what they'd have left and any warnings; check the leave policy (notice periods, approvals) with search_knowledge; then offer to draft the request.",
+    );
+  }
+  if (names.has("get_my_leave_balance") || names.has("check_leave_dates")) {
+    guidance.push("- Leave records are personal. You can only see the current user's own; never guess or discuss anyone else's.");
+  }
   if (names.has("calculate")) guidance.push("- Use calculate for arithmetic instead of computing it yourself.");
   if (names.has("get_current_time")) guidance.push("- Use get_current_time when the answer depends on today's date or the time (deadlines, \"next Friday\", notice periods).");
   if (names.has("list_documents") || names.has("get_usage_stats")) {
