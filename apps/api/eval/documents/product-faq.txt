@@ -1,0 +1,28 @@
+Northwind Cloud Backup - Frequently Asked Questions
+
+What is Northwind Cloud Backup?
+Northwind Cloud Backup is an encrypted backup service for small businesses. It backs up laptops, servers and Microsoft 365 mailboxes to Northwind's data centres in Frankfurt and Singapore.
+
+Which plans are available?
+There are three plans. The Starter plan costs 9 USD per device per month and includes 250 GB of storage per device. The Business plan costs 19 USD per device per month and includes 1 TB per device plus Microsoft 365 backup. The Enterprise plan has custom pricing, unlimited storage and a dedicated support engineer.
+
+How long are backups retained?
+Starter keeps daily snapshots for 30 days. Business keeps daily snapshots for 90 days and monthly snapshots for 1 year. Enterprise retention is configurable up to 7 years.
+
+How is my data encrypted?
+Data is encrypted on the device with AES-256 before upload and is transferred over TLS 1.3. Customers can optionally manage their own encryption key; if that key is lost, Northwind cannot recover the data.
+
+What is the recovery time objective?
+For Business and Enterprise plans, Northwind guarantees that a full device restore can begin within 4 hours of a request. Starter plan restores are best effort.
+
+Is there a free trial?
+Yes. Every plan can be trialled free for 14 days with up to 3 devices. No credit card is required to start the trial.
+
+What is the uptime commitment?
+The Business plan includes a 99.9 percent monthly uptime SLA. The Enterprise plan includes a 99.95 percent SLA with service credits of 10 percent of the monthly fee for each 0.1 percent below the target.
+
+How do I contact support?
+Starter customers can use email support with a response time of 1 business day. Business customers get chat and email support with a 4 hour response time. Enterprise customers have 24/7 phone support.
+
+Can I cancel at any time?
+Monthly subscriptions can be cancelled at any time and remain active until the end of the billing period. Annual subscriptions receive a 15 percent discount but are non-refundable.

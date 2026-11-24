@@ -1,0 +1,137 @@
+// LocalMind AI relational data model.
+//
+// PostgreSQL is the system of record for users, documents, conversations and
+// the tool audit trail. Chunk *content* and embeddings live in Qdrant; the
+// DocumentChunk table only keeps the bookkeeping needed to locate, cite and
+// delete those vectors.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+enum ToolExecutionStatus {
+  SUCCESS
+  ERROR
+  DENIED
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(USER)
+  createdAt    DateTime @default(now())
+
+  conversations Conversation[]
+  documents     Document[]
+}
+
+model Conversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages       Message[]
+  toolExecutions ToolExecution[]
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id             String      @id @default(uuid()) @db.Uuid
+  conversationId String      @db.Uuid
+  role           MessageRole
+  content        String
+  /// Citations attached to an assistant answer (Source[] from @localmind/shared)
+  sources        Json?
+  createdAt      DateTime    @default(now())
+
+  conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  toolExecutions ToolExecution[]
+
+  @@index([conversationId, createdAt])
+}
+
+model Document {
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String         @db.Uuid
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  /// sha256 of the uploaded bytes, used to reject duplicate uploads
+  contentHash String
+  status      DocumentStatus @default(PENDING)
+  error       String?
+  pageCount   Int?
+  chunkCount  Int            @default(0)
+  /// Embedding model used to index this document (re-index when it changes)
+  embeddingModel String?
+  uploadedAt  DateTime       @default(now())
+  indexedAt   DateTime?
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks DocumentChunk[]
+
+  @@unique([userId, contentHash])
+  @@index([userId, uploadedAt])
+  @@index([status])
+}
+
+model DocumentChunk {
+  id         String @id @default(uuid()) @db.Uuid
+  documentId String @db.Uuid
+  chunkIndex Int
+  /// Qdrant point id
+  vectorId   String @unique @db.Uuid
+  pageStart  Int?
+  pageEnd    Int?
+  tokenCount Int
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+}
+
+model ToolExecution {
+  id             String              @id @default(uuid()) @db.Uuid
+  conversationId String              @db.Uuid
+  /// Assistant message produced by the turn that ran this tool
+  messageId      String?             @db.Uuid
+  toolName       String
+  arguments      Json
+  status         ToolExecutionStatus
+  error          String?
+  durationMs     Int
+  createdAt      DateTime            @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message      Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([toolName, createdAt])
+}
