@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from "react"
 import { api, ApiError } from "@/lib/api";
 import { formatBytes, relativeTime } from "@/lib/format";
 import { ClassificationBadge, VisibilityLabel } from "./AccessBadges";
+import { AccessRequestsInbox } from "./AccessRequestsInbox";
 import { SharingFields } from "./SharingFields";
 
 const ACCEPT = ".pdf,.docx,.txt,.md";
@@ -15,11 +16,13 @@ function AccessEditor({
   groups,
   onSave,
   onCancel,
+  onRevoke,
 }: {
   doc: DocumentDto;
   groups: GroupRefDto[];
   onSave: (v: Required<DocumentAccessRequest>) => Promise<void>;
   onCancel: () => void;
+  onRevoke: (userId: string) => Promise<void>;
 }) {
   const [value, setValue] = useState<Required<DocumentAccessRequest>>({
     visibility: doc.visibility,
@@ -32,6 +35,21 @@ function AccessEditor({
   return (
     <div className="access-editor">
       <SharingFields value={value} onChange={setValue} groups={options} />
+      {doc.grants.length > 0 && (
+        <div className="grants">
+          <div className="small muted">Also shared with (approved requests):</div>
+          <ul>
+            {doc.grants.map((g) => (
+              <li key={g.id} className="small">
+                {g.email}{" "}
+                <button type="button" className="link danger" onClick={() => void onRevoke(g.id)}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="doc-actions">
         <button
           type="button"
@@ -144,6 +162,7 @@ export function DocumentsPanel({ token, user, onUnauthorized }: { token: string;
 
   return (
     <aside className="documents" aria-label="Documents">
+      <AccessRequestsInbox token={token} onDecided={() => void refresh()} />
       <h2>Knowledge base</h2>
       <div
         className={`dropzone ${dragging ? "dragging" : ""}`}
@@ -214,7 +233,20 @@ export function DocumentsPanel({ token, user, onUnauthorized }: { token: string;
               </div>
               {d.error && <div className="doc-error">{d.error}</div>}
               {editing === d.id ? (
-                <AccessEditor doc={d} groups={shareableGroups} onSave={(v) => saveAccess(d, v)} onCancel={() => setEditing(null)} />
+                <AccessEditor
+                  doc={d}
+                  groups={shareableGroups}
+                  onSave={(v) => saveAccess(d, v)}
+                  onCancel={() => setEditing(null)}
+                  onRevoke={async (userId) => {
+                    try {
+                      await api.revokeGrant(token, d.id, userId);
+                      setDocs((all) => all.map((x) => (x.id === d.id ? { ...x, grants: x.grants.filter((g) => g.id !== userId) } : x)));
+                    } catch (err) {
+                      handle(err);
+                    }
+                  }}
+                />
               ) : (
                 canManage && (
                   <div className="doc-actions">

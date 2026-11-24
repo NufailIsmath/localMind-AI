@@ -17,6 +17,19 @@ export interface RetrievedChunk {
   score: number;
 }
 
+/** A strong match in a document the user may NOT read. Only metadata — never content. */
+export interface WithheldMatch {
+  documentId: string;
+  reason: "above_clearance" | "not_shared";
+  classification: Classification;
+  /** Group names, or "the whole organization". */
+  sharedWith: string[];
+  /** Access can be requested when the user's clearance would allow it. */
+  canRequest: boolean;
+}
+
+export type WithheldFinder = (principal: AccessPrincipal, candidates: { documentId: string; score: number }[]) => Promise<WithheldMatch[]>;
+
 export interface RetrieveOptions {
   limit?: number;
   scoreThreshold?: number;
@@ -40,12 +53,40 @@ export class RetrievalService {
     private readonly defaults: { limit: number; scoreThreshold: number },
     /** Authoritative re-check; also drops vectors orphaned by a failed delete. */
     private readonly liveFilter?: LiveDocumentFilter,
+    private readonly notices?: { finder: WithheldFinder; scoreThreshold: number },
   ) {}
+
+  /**
+   * Retrieval plus restricted-content notices: besides the passages the user
+   * may read, reports strong matches in team/org documents they can't — so
+   * the assistant can say "that's confidential" instead of "not found".
+   */
+  async retrieveWithNotices(
+    principal: AccessPrincipal,
+    query: string,
+    opts: RetrieveOptions = {},
+  ): Promise<{ chunks: RetrievedChunk[]; withheld: WithheldMatch[] }> {
+    const trimmed = query.trim();
+    if (!trimmed) return { chunks: [], withheld: [] };
+    const vector = await this.embeddings.embedQuery(trimmed, opts.signal);
+    const chunks = await this.searchReadable(principal, vector, opts);
+    if (!this.notices) return { chunks, withheld: [] };
+    const readable = new Set(chunks.map((c) => c.documentId));
+    const candidates = (await this.vectors.matchingDocuments(vector, 10, this.notices.scoreThreshold)).filter(
+      (c) => !readable.has(c.documentId),
+    );
+    const withheld = candidates.length ? await this.notices.finder(principal, candidates) : [];
+    return { chunks, withheld };
+  }
 
   async retrieve(principal: AccessPrincipal, query: string, opts: RetrieveOptions = {}): Promise<RetrievedChunk[]> {
     const trimmed = query.trim();
     if (!trimmed) return [];
     const vector = await this.embeddings.embedQuery(trimmed, opts.signal);
+    return this.searchReadable(principal, vector, opts);
+  }
+
+  private async searchReadable(principal: AccessPrincipal, vector: number[], opts: RetrieveOptions): Promise<RetrievedChunk[]> {
     const hits = await this.vectors.search({
       vector,
       principal,

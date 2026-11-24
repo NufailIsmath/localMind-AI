@@ -24,6 +24,7 @@ export function toDocumentDto(d: DocumentWithAccess, viewer: AccessPrincipal): D
     groups: d.groupAccess.map((g) => g.group),
     owned: d.userId === viewer.userId,
     ownerEmail: d.user.email,
+    grants: d.userId === viewer.userId || viewer.role === "ADMIN" ? d.userAccess.map((u) => u.user) : [],
   };
 }
 
@@ -99,6 +100,13 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
     const { id } = parse(UuidParam, req.params);
     const body = parse(SharingSchema, req.body ?? {});
     return toDocumentDto(await access.updateDocumentAccess(req.principal, id, body), req.principal);
+  });
+
+  /** Revoke an individual grant (e.g. from an approved access request). */
+  app.delete("/:id/grants/:userId", async (req, reply) => {
+    const { id, userId } = parse(z.object({ id: z.uuid(), userId: z.uuid() }), req.params);
+    await access.revokeGrant(req.principal, id, userId);
+    return reply.code(204).send();
   });
 
   app.post("/:id/reindex", async (req, reply) => {

@@ -64,8 +64,8 @@ function decide(messages: OllamaMessage[], toolNames: Set<string>): { content: s
     return call("list_documents", {});
   }
   if (/\b(stats|statistics|usage)\b/i.test(userText) && toolNames.has("get_usage_stats")) return call("get_usage_stats", {});
-  if (/^\s*(hi|hello|hey|thanks|thank you)\b/i.test(userText) || !toolNames.has("search_knowledge")) {
-    return { content: "Hello! I'm LocalMind. Ask me about your documents, or for a calculation or the time.", toolCalls: [] };
+  if (/^\s*(hi|hello|hey|thanks|thank you|what can you)\b/i.test(userText) || !toolNames.has("search_knowledge")) {
+    return { content: "Hey! 👋 I'm LocalMind. Ask me anything about your team's documents, or throw me a calculation. What's on your mind?", toolCalls: [] };
   }
   return call("search_knowledge", { query: userText.replace(/[?!.]+$/, "") });
 }
@@ -85,15 +85,30 @@ function bestSentence(passage: string, question: string): string {
   return best.slice(0, 240);
 }
 
+const OPENERS = ["Ah-ah, nice try! 🤫", "Ooh, I'd love to tell you, but no. 🙊", "Ha, good one, but my lips are sealed! 🤐"];
+
+/** Playful refusal for restricted matches (deterministic per question so tests are stable). */
+function confidentialReply(r: { reason: string; sharedWith: string[]; userCanRequestAccess: boolean }, question: string): string {
+  const opener = OPENERS[[...question].reduce((a, c) => a + c.charCodeAt(0), 0) % OPENERS.length];
+  const audience = r.sharedWith.join(" and ");
+  if (r.reason === "above_clearance") {
+    return `${opener} That one's confidential: it's above your clearance level, so I can't share it. If you really need it, your manager or ${audience} would be the people to ask.`;
+  }
+  return `${opener} That's confidential: it's only shared with ${audience}. ${r.userCanRequestAccess ? 'Tap "Ask for access" below and I\'ll send the owner a request.' : ""}`.trim();
+}
+
 function answerFromTool(p: ToolPayload, question: string): string {
   if (p.status !== "success") return `The ${p.tool} tool reported a problem: ${p.error}`;
   const d = p.data;
   switch (p.tool) {
     case "search_knowledge": {
-      if (!d.results?.length) return "I couldn't find anything about that in your documents.";
+      const restricted = (d.restricted ?? []) as { reason: string; sharedWith: string[]; userCanRequestAccess: boolean }[];
+      const denial = restricted.length ? confidentialReply(restricted[0]!, question) : "";
+      if (!d.results?.length) return denial || "Hmm, I couldn't find anything about that in your documents. Want to try different wording?";
       const top = d.results[0];
       const sentence = bestSentence(String(top.content), question);
-      return `According to ${top.fileName}${top.pages ? ` (page ${top.pages})` : ""}: "${sentence}" [${top.ref}]`;
+      const answer = `According to ${top.fileName}${top.pages ? ` (page ${top.pages})` : ""}: "${sentence}" [${top.ref}]`;
+      return denial ? `${answer}\n\nOne more thing: ${denial.charAt(0).toLowerCase()}${denial.slice(1)}` : answer;
     }
     case "calculate":
       return `The result of ${d.expression} is **${d.result}**.`;

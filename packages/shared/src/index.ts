@@ -77,6 +77,41 @@ export interface Source {
   excerpt: string;
 }
 
+/**
+ * "That's confidential": a strong match in a document the user can't read.
+ * Carries no title, content or score — only why and who it's shared with.
+ */
+export interface RestrictedNoticeDto {
+  id: string;
+  reason: "above_clearance" | "not_shared";
+  classification: Classification;
+  sharedWith: string[];
+  /** True when an access request could be approved (clearance is sufficient). */
+  canRequest: boolean;
+  /** Status of the user's request raised from this notice, if any. */
+  requestStatus: AccessRequestStatus | null;
+}
+
+export type AccessRequestStatus = "PENDING" | "APPROVED" | "DENIED";
+
+export interface AccessRequestDto {
+  id: string;
+  status: AccessRequestStatus;
+  note: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+  classification: Classification;
+  sharedWith: string[];
+  /** Hidden from the requester until approved. */
+  documentId: string | null;
+  filename: string | null;
+  requesterEmail: string;
+  decidedByEmail: string | null;
+  /** The chat message + notice the request was raised from. */
+  messageId: string | null;
+  noticeId: string | null;
+}
+
 export interface ToolExecutionSummary {
   id: string;
   tool: string;
@@ -96,6 +131,7 @@ export interface ChatResponse {
   messageId: string;
   answer: string;
   sources: Source[];
+  restricted: RestrictedNoticeDto[];
   toolExecutions: ToolExecutionSummary[];
 }
 
@@ -104,6 +140,7 @@ export interface MessageDto {
   role: MessageRole;
   content: string;
   sources: Source[];
+  restricted: RestrictedNoticeDto[];
   toolExecutions: ToolExecutionSummary[];
   createdAt: string;
 }
@@ -136,6 +173,8 @@ export interface DocumentDto {
   /** Whether the current user uploaded it (and can manage it). */
   owned: boolean;
   ownerEmail: string;
+  /** People granted access individually (visible to the owner and admins). */
+  grants: { id: string; email: string }[];
 }
 
 export interface ToolInfoDto {

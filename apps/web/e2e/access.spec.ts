@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { ask } from "./helpers";
 
 /**
- * Requires the demo organisation: `npm run seed:demo` (see apps/api/scripts/seed-demo.ts).
+ * Requires the demo organisation: `npm run seed:demo` (see apps/api/scripts/seed-demo.ts),
+ * re-run before each E2E run so grants and requests start empty.
  */
 async function signIn(page: Page, email: string) {
   await page.goto("/");
@@ -15,19 +16,60 @@ async function signIn(page: Page, email: string) {
 const SHOTS = process.env.E2E_SCREENSHOTS;
 
 test.describe("document access control (demo organisation)", () => {
-  test("an intern asking for the CEO's salary gets nothing; the file isn't even listed", async ({ page }) => {
+  test("an intern asking for the CEO's salary gets a playful no, and nothing leaks", async ({ page }) => {
     await signIn(page, "intern@demo.local");
     await expect(page.locator(".documents")).toContainText("employee-handbook.md");
-    await expect(page.locator(".documents")).toContainText("engineering-roadmap.md");
     await expect(page.locator(".documents")).not.toContainText("executive-compensation.md");
     await expect(page.locator(".documents")).not.toContainText("board-strategy.md");
     await expect(page.locator(".account")).toContainText("Internal clearance");
 
     const answer = await ask(page, "What is the CEO salary?");
+    await expect(answer.locator(".markdown")).toContainText(/confidential/i);
     await expect(answer).not.toContainText("480,000");
     await expect(answer.getByText("executive-compensation.md")).toHaveCount(0);
-    await expect(answer.locator(".sources li")).toHaveCount(0);
+    const card = answer.locator(".restricted-above");
+    await expect(card).toContainText("Confidential · above your clearance");
+    await expect(card.getByRole("button", { name: "Ask for access" })).toHaveCount(0);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/access-intern.png` });
+
+    // Quick replies keep the conversation going.
+    await card.getByRole("button", { name: "Which documents can I see?" }).click();
+    await expect(page.locator(".msg-assistant:not(.msg-draft)").last()).toContainText("employee-handbook.md");
+  });
+
+  test("ask for access → owner approves → ask again", async ({ browser }) => {
+    const eng = await browser.newPage();
+    await signIn(eng, "engineer@demo.local");
+    const answer = await ask(eng, "What do new hires get on day one?");
+    await expect(answer.locator(".markdown")).toContainText(/confidential/i);
+    const card = answer.locator(".restricted").filter({ hasText: "only shared with HR" });
+    await card.getByRole("button", { name: "Ask for access" }).click();
+    await card.getByLabel("Why do you need access? (optional)").fill("I'm buddying a new joiner next week");
+    await card.getByRole("button", { name: "Send request" }).click();
+    await expect(card).toContainText("Request sent");
+    if (SHOTS) await eng.screenshot({ path: `${SHOTS}/access-request-sent.png` });
+
+    const hr = await browser.newPage();
+    await signIn(hr, "hr@demo.local");
+    const req = hr.getByTestId("access-request").filter({ hasText: "engineer@demo.local" });
+    await expect(req).toContainText("hr-onboarding-checklist.md");
+    await expect(req).toContainText("buddying a new joiner");
+    if (SHOTS) await hr.screenshot({ path: `${SHOTS}/access-inbox.png` });
+    await req.getByRole("button", { name: "Approve" }).click();
+    await expect(req).toHaveCount(0);
+
+    // The engineer's card updates on its own, then they can ask again.
+    await expect(card).toContainText("Access granted", { timeout: 15_000 });
+    await card.getByRole("button", { name: "Ask again" }).click();
+    const again = eng.locator(".msg-assistant:not(.msg-draft)").last();
+    await expect(again.locator(".sources li").first()).toContainText("hr-onboarding-checklist.md", { timeout: 15_000 });
+    if (SHOTS) await eng.screenshot({ path: `${SHOTS}/access-granted.png` });
+
+    // HR can take it back again.
+    const doc = hr.getByTestId("doc-hr-onboarding-checklist.md");
+    await doc.getByRole("button", { name: "Access" }).click();
+    await doc.locator(".grants").getByRole("button", { name: "Remove" }).click();
+    await expect(doc.locator(".grants")).toHaveCount(0);
   });
 
   test("HR, who is allowed, gets the answer with a Confidential source", async ({ page }) => {

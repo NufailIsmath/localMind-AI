@@ -95,6 +95,14 @@ Policy (`modules/access/access.policy.ts`): owner, **or** ORGANIZATION + classif
 - **Group deletion** cascades `DocumentGroupAccess` rows, and the affected documents' payloads are re-synced.
 - **Audit.** `AuditEvent` records sharing at upload, access changes, admin deletions, group create/delete, and user role/clearance/membership changes.
 
+## Restricted-content notices and access requests
+
+`RetrievalService.retrieveWithNotices` runs the normal filtered search, plus `VectorStore.matchingDocuments`: an access-*unfiltered* query that returns only document ids and scores (with payload limited to `documentId`, so no content ever leaves Qdrant on this path). Candidates above `RESTRICTED_NOTICE_SCORE_THRESHOLD` that the user can't read go to `AccessService.withheldMatches`. It keeps READY team/org-shared documents only, never PRIVATE ones, and classifies each as `above_clearance` or `not_shared`, keeping at most one `above_clearance` notice.
+
+The search tool hands the model only `{ ref, reason, classification, sharedWith, userCanRequestAccess }` plus tone guidance. The orchestrator stores full notices, including `documentId`, on `Message.restricted`, and returns them to clients without the id.
+
+`POST /api/access-requests` resolves `(messageId, noticeId)` server-side after checking the message belongs to the caller, so ids can't be guessed. Approval upserts a `DocumentUserAccess` row (policy clause 4, still clearance-capped), re-syncs the vector payload (`userIds`) and audits. If the requester's clearance has dropped below the document's classification, approval is refused.
+
 ## Data model
 
 See `prisma/schema.prisma`. PostgreSQL is the system of record; Qdrant holds chunk text + vectors with a payload

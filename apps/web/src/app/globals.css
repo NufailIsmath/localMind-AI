@@ -969,6 +969,111 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+
+/* ---------- Confidential notices & access requests ---------- */
+.restricted {
+  margin-top: 12px;
+  border: 1px solid var(--warn-soft);
+  background: color-mix(in srgb, var(--warn-soft) 55%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+.restricted-above {
+  border-color: var(--danger-soft);
+  background: color-mix(in srgb, var(--danger-soft) 55%, transparent);
+}
+.restricted-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+}
+.restricted-icon {
+  font-size: 20px;
+  line-height: 1.2;
+}
+.restricted-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.restricted-compose {
+  display: grid;
+  gap: 6px;
+}
+.restricted-compose textarea {
+  resize: vertical;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.restricted-status {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.restricted-status.pending {
+  color: var(--warn);
+}
+.restricted-status.approved {
+  color: var(--accent);
+}
+.restricted-status.denied {
+  color: var(--muted);
+}
+.quick-replies {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.quick-replies .chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.inbox {
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+.inbox h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.inbox .count {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-radius: 99px;
+  font-size: 11px;
+  padding: 0 7px;
+}
+.inbox ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.inbox blockquote {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-style: italic;
+}
+.grants ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1100px) {
   .app {

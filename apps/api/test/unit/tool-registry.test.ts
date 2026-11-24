@@ -12,6 +12,7 @@ const ctx = (over: Partial<ToolContext> = {}): ToolContext => ({
   conversationId: "conv-1",
   signal: new AbortController().signal,
   addSources: () => [],
+  addRestricted: () => [],
   ...over,
 });
 

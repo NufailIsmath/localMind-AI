@@ -139,7 +139,7 @@ describe.runIf(infraReady)("document access control", () => {
       const result = await h.app.services.tools.execute(
         "search_knowledge",
         { query: "CEO salary", userId: ids.hr, clearance: "RESTRICTED", groupIds: [groups.HR], role: "ADMIN" },
-        { userId: p.userId, userRole: p.role, principal: p, conversationId: "x", signal: new AbortController().signal, addSources: (c) => c.map((_, i) => `S${i + 1}`) },
+        { userId: p.userId, userRole: p.role, principal: p, conversationId: "x", signal: new AbortController().signal, addSources: (c) => c.map((_, i) => `S${i + 1}`), addRestricted: (m) => m.map((_, i) => `R${i + 1}`) },
       );
       expect(result.status).toBe("SUCCESS");
       expect(JSON.stringify(result)).not.toContain("480000");
@@ -206,6 +206,7 @@ describe.runIf(infraReady)("document access control", () => {
         classification: "PUBLIC",
         classificationLevel: 0,
         groupIds: [],
+        userIds: [],
       });
       const raw = await h.app.services.vectors.search({
         vector: await h.app.services.embeddings.embedQuery(QUERIES.notes),

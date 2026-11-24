@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { ChatResponse, ChatStreamEvent, Source, ToolExecutionSummary } from "@localmind/shared";
+import type { ChatResponse, ChatStreamEvent, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@localmind/shared";
+import type { StoredNotice } from "../modules/access/access-requests.service.js";
 import type { ChatRepository } from "../modules/chat/chat.repository.js";
 import type { ToolRegistry } from "../modules/tools/tool.registry.js";
 import type { ToolResult } from "../modules/tools/tool.types.js";
 import type { AccessPrincipal } from "../modules/access/access.policy.js";
-import type { RetrievedChunk } from "../rag/retrieval.service.js";
+import type { RetrievedChunk, WithheldMatch } from "../rag/retrieval.service.js";
 import {
   buildSystemPrompt,
   cleanAssistantContent,
@@ -98,6 +99,36 @@ class SourceCollector {
   }
 }
 
+/** Collects "that's confidential" notices across tool calls (one per document). */
+class RestrictedCollector {
+  private readonly byDoc = new Map<string, StoredNotice>();
+
+  add(matches: WithheldMatch[]): string[] {
+    return matches.map((m) => {
+      let n = this.byDoc.get(m.documentId);
+      if (!n) {
+        n = { id: `R${this.byDoc.size + 1}`, ...m };
+        this.byDoc.set(m.documentId, n);
+      }
+      return n.id;
+    });
+  }
+
+  all(): StoredNotice[] {
+    return [...this.byDoc.values()];
+  }
+}
+
+/** Client view of a notice: the document id stays on the server. */
+export const toNoticeDto = (n: StoredNotice, requestStatus: RestrictedNoticeDto["requestStatus"] = null): RestrictedNoticeDto => ({
+  id: n.id,
+  reason: n.reason,
+  classification: n.classification,
+  sharedWith: n.sharedWith,
+  canRequest: n.canRequest,
+  requestStatus,
+});
+
 /**
  * The AI orchestrator runs one chat turn:
  *
@@ -139,6 +170,7 @@ export class Orchestrator {
     ];
 
     const sources = new SourceCollector();
+    const restricted = new RestrictedCollector();
     const executions: ToolExecutionSummary[] = [];
     const onToken = onEvent ? (delta: string) => emit({ type: "token", content: delta }) : undefined;
     let answer: string | undefined;
@@ -155,7 +187,7 @@ export class Orchestrator {
       messages.push({ role: "assistant", content: result.content, toolCalls: result.toolCalls });
       const accepted = result.toolCalls.slice(0, this.opts.maxToolCallsPerRound);
       for (const call of accepted) {
-        const summary = await this.executeTool(call, conversation.id, user, sources, signal, emit);
+        const summary = await this.executeTool(call, conversation.id, user, sources, restricted, signal, emit);
         executions.push(summary.execution);
         messages.push({ role: "tool", toolName: call.name, content: summary.content, ...(call.id ? { toolCallId: call.id } : {}) });
       }
@@ -183,7 +215,8 @@ export class Orchestrator {
     if (!answer) answer = "I wasn't able to produce an answer. Please try rephrasing your question.";
 
     const answerSources = sources.forAnswer(answer);
-    const messageId = await this.repo.addAssistantMessage(conversation.id, answer, answerSources);
+    const notices = restricted.all();
+    const messageId = await this.repo.addAssistantMessage(conversation.id, answer, answerSources, notices);
     await this.repo.linkToolExecutions(executions.map((e) => e.id), messageId);
 
     const response: ChatResponse = {
@@ -191,6 +224,7 @@ export class Orchestrator {
       messageId,
       answer,
       sources: answerSources,
+      restricted: notices.map((n) => toNoticeDto(n)),
       toolExecutions: executions,
     };
     this.log.info(
@@ -212,6 +246,7 @@ export class Orchestrator {
     conversationId: string,
     user: AccessPrincipal,
     sources: SourceCollector,
+    restricted: RestrictedCollector,
     signal: AbortSignal,
     emit: (e: ChatStreamEvent) => void,
   ): Promise<{ execution: ToolExecutionSummary; content: string }> {
@@ -225,6 +260,7 @@ export class Orchestrator {
       conversationId,
       signal,
       addSources: (chunks, query) => sources.add(chunks, query),
+      addRestricted: (matches) => restricted.add(matches),
     });
 
     const execution: ToolExecutionSummary = {

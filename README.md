@@ -10,7 +10,7 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 | **Backend** | Node.js · TypeScript · Fastify · Zod · Prisma |
 | **Data** | Qdrant (vectors) · PostgreSQL (users, documents, chats, tool audit log) |
 | **Frontend** | Next.js 16 · React 19 (streaming chat UI) |
-| **Testing** | Vitest — 84 unit + 81 integration tests (real Postgres/Qdrant), 10 Playwright E2E, RAG evaluation harness |
+| **Testing** | Vitest — 84 unit + 94 integration tests (real Postgres/Qdrant), 11 Playwright E2E, RAG evaluation harness |
 | **Infra** | Docker Compose |
 
 ## Features
@@ -138,9 +138,32 @@ The policy is compiled into a Qdrant filter, a Prisma `where` and a plain predic
 
 Rules for sharing: non-admins can only share with groups they belong to, so nobody can push content (or prompt injections) into another team's knowledge base. Readers can't change, re-index or delete documents they don't own. Users without read access get `404` rather than `403`, so they can't tell the document exists.
 
-**Try it:** `npm run seed:demo` creates a demo company (CEO, CFO, HR, engineer, intern) with classified documents. Sign in as `intern@demo.local` / `demo-password`, ask *"What is the CEO salary?"*, then try the same as `hr@demo.local`.
+**Try it:** `npm run seed:demo` creates a demo company (CEO, CFO, HR, engineer, intern) with classified documents (password `demo-password` for every account):
+1. As `intern@demo.local`, ask *"What is the CEO salary?"* and get a playful no.
+2. As `hr@demo.local`, ask the same and get the answer with a Confidential source.
+3. As `engineer@demo.local`, ask *"What do new hires get on day one?"*, then click **Ask for access**.
+4. Approve the request as `hr@demo.local`.
 
 **Tested by** a 41-case integration matrix: 5 people × 5 documents for retrieval, listing and direct access, checked both through Qdrant alone and through the full path. It also covers attempts to widen access through tool arguments, sharing into foreign groups, revocation via group removal, clearance changes and group deletion, a tampered vector payload, admin-only endpoints and the audit trail. Deliberately breaking either enforcement layer makes the suite fail.
+
+### "Ah-ah, that's confidential" and asking for access
+
+When a question strongly matches a document the user can't read, LocalMind says so in a friendly way instead of pretending nothing exists, and gives them something to do next:
+
+| Situation | Reply | Under the reply |
+|---|---|---|
+| Above their clearance (intern → CEO salary) | *"Ha, good one, but my lips are sealed! 🤐 That one's confidential: it's above your clearance level…"* | 🤫 card + quick-reply suggestions (no request button, since only an admin can change clearance) |
+| Clearance is fine, just not shared with them | *"Ah-ah, nice try! 🤫 That's confidential: it's only shared with HR…"* | 🔒 card with **Ask for access** (optional note) |
+
+The request goes to the document's owner, who sees it in an **Access requests** inbox with **Approve / Decline**. Approval grants that one person access, still capped by their clearance. The requester's card updates live to *"✓ Access granted!"* with an **Ask again** button. Owners can revoke individual grants from the Access editor, and everything lands in the audit log.
+
+**What the acknowledgement does and doesn't reveal.** Saying "that's confidential" admits that *something* matched, which can be probed. So it's deliberately narrow:
+- **Only shared documents:** only READY documents shared with a team or the whole organisation are acknowledged. Someone's private files never are.
+- **Only strong matches:** similarity must reach `RESTRICTED_NOTICE_SCORE_THRESHOLD`, default 0.55.
+- **Minimal detail:** at most one "above your clearance" notice per answer, carrying only the classification and audience. No title, excerpt, score or document id reaches the client or the model. The requester only learns the file name once approved.
+- **Silent mode:** set `ACCESS_DENIAL_MODE=silent` to go back to revealing nothing.
+
+Requests can only be raised from a notice the assistant actually showed that user (message + notice id are checked server-side), so they can't be used to fish for document ids.
 
 **Not covered:** answers given *before* access was revoked stay in that user's chat history. Revocation stops future retrieval; it can't un-tell a past answer.
 
@@ -165,6 +188,10 @@ All endpoints except `auth/register`, `auth/login` and `health` require `Authori
 | DELETE | `/api/documents/:id` | Delete from PostgreSQL, Qdrant and disk |
 | GET | `/api/tools` | Tools available to your role, with JSON-schema parameters |
 | PATCH | `/api/documents/:id/access` | Change visibility, classification, groups (owner or admin) |
+| DELETE | `/api/documents/:id/grants/:userId` | Revoke an individual grant (owner or admin) |
+| POST | `/api/access-requests` | Ask for access from a notice in a chat answer (`messageId`, `noticeId`, optional `note`) |
+| GET | `/api/access-requests` | `incoming` (to decide on) and `outgoing` (yours) |
+| POST | `/api/access-requests/:id/approve` · `/deny` | Decide (document owner or admin) |
 | GET | `/api/tools/executions` | Your tool audit log |
 | GET / PATCH | `/api/admin/users`, `/api/admin/users/:id` | People: role, clearance, groups (admin) |
 | GET / POST / DELETE | `/api/admin/groups`, `/api/admin/groups/:id` | Groups (admin) |
@@ -255,7 +282,7 @@ npm run test:integration      # real PostgreSQL (localmind_test DB) + real Qdran
 npm run typecheck
 
 # End-to-end (browser) — against the running stack with the mock model:
-npm run mock:ollama & RETRIEVAL_SCORE_THRESHOLD=0.05 npm run dev:api &
+npm run mock:ollama & RETRIEVAL_SCORE_THRESHOLD=0.05 RESTRICTED_NOTICE_SCORE_THRESHOLD=0.1 npm run dev:api &
 npm run build -w @localmind/web && npm run start -w @localmind/web &
 npm run seed:demo             # demo organisation used by the access-control E2E tests
 npm run e2e -w @localmind/web
@@ -280,6 +307,8 @@ All settings are environment variables validated at startup (see [`.env.example`
 | `OLLAMA_THINK` | `false` | Qwen3 reasoning mode (slower, sometimes better) |
 | `CHUNK_SIZE_TOKENS` / `CHUNK_OVERLAP_TOKENS` | `600` / `100` | Starting values — tune with the eval harness |
 | `RETRIEVAL_LIMIT` / `RETRIEVAL_SCORE_THRESHOLD` | `5` / `0.35` | Top-k and minimum cosine similarity |
+| `ACCESS_DENIAL_MODE` | `acknowledge` | `acknowledge`: friendly "that's confidential" + request access; `silent`: reveal nothing |
+| `RESTRICTED_NOTICE_SCORE_THRESHOLD` | `0.55` | Minimum similarity before a restricted document is acknowledged |
 | `MAX_TOOL_ROUNDS` / `MAX_TOOL_CALLS_PER_ROUND` | `5` / `5` | Bounds on the agent loop |
 | `TOOL_TIMEOUT_MS` / `LLM_TIMEOUT_MS` | `15000` / `180000` | Fault-tolerance limits |
 | `ALLOW_REGISTRATION` | `true` | Set to `false` after creating your account |

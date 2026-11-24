@@ -173,7 +173,7 @@ export class IngestionService {
 
   /** Runs the full pipeline for one document. Never throws; failures are recorded on the document. */
   async process(documentId: string): Promise<void> {
-    const doc = await this.prisma.document.findUnique({ where: { id: documentId }, include: { groupAccess: { select: { groupId: true } } } });
+    const doc = await this.prisma.document.findUnique({ where: { id: documentId }, include: { groupAccess: { select: { groupId: true } }, userAccess: { select: { userId: true } } } });
     if (!doc) return;
     const access = toAccessPayload(doc);
     const started = Date.now();
@@ -241,7 +241,7 @@ export class IngestionService {
         return;
       }
       // Sharing may have changed while we were embedding: re-sync the payload if so.
-      const now = await this.prisma.document.findUnique({ where: { id: documentId }, include: { groupAccess: { select: { groupId: true } } } });
+      const now = await this.prisma.document.findUnique({ where: { id: documentId }, include: { groupAccess: { select: { groupId: true } }, userAccess: { select: { userId: true } } } });
       if (now && JSON.stringify(toAccessPayload(now)) !== JSON.stringify(access)) {
         await this.vectors.setAccess(documentId, toAccessPayload(now));
       }

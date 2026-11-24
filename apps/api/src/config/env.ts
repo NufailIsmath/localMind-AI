@@ -38,6 +38,14 @@ const EnvSchema = z
     CHUNK_OVERLAP_TOKENS: int(100, 0),
     RETRIEVAL_LIMIT: int(5, 1),
     RETRIEVAL_SCORE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.35),
+    /**
+     * acknowledge: tell users when a strong match exists in a team/org document they
+     * can't read ("that's confidential") and let them request access.
+     * silent: behave as if nothing matched (reveals nothing about what exists).
+     */
+    ACCESS_DENIAL_MODE: z.enum(["acknowledge", "silent"]).default("acknowledge"),
+    /** Minimum similarity before a restricted document is acknowledged (keeps probing imprecise). */
+    RESTRICTED_NOTICE_SCORE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
     MAX_UPLOAD_MB: z.coerce.number().positive().default(20),
     UPLOAD_DIR: z.string().default("./data/uploads"),
 
@@ -79,6 +87,8 @@ export interface AppConfig {
     chunkOverlapTokens: number;
     retrievalLimit: number;
     scoreThreshold: number;
+    accessDenialMode: "acknowledge" | "silent";
+    restrictedNoticeThreshold: number;
     maxUploadBytes: number;
     uploadDir: string;
   };
@@ -123,6 +133,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       chunkOverlapTokens: e.CHUNK_OVERLAP_TOKENS,
       retrievalLimit: e.RETRIEVAL_LIMIT,
       scoreThreshold: e.RETRIEVAL_SCORE_THRESHOLD,
+      accessDenialMode: e.ACCESS_DENIAL_MODE,
+      restrictedNoticeThreshold: e.RESTRICTED_NOTICE_SCORE_THRESHOLD,
       maxUploadBytes: Math.floor(e.MAX_UPLOAD_MB * 1024 * 1024),
       uploadDir: e.UPLOAD_DIR,
     },

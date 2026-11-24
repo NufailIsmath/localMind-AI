@@ -7,6 +7,7 @@ import type { EmbeddingService, LlmService } from "./ai/types.js";
 import type { AppConfig } from "./config/env.js";
 import { createPrisma } from "./database/prisma.js";
 import { AccessService } from "./modules/access/access.service.js";
+import { AccessRequestService } from "./modules/access/access-requests.service.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { PrismaChatRepository } from "./modules/chat/chat.repository.js";
 import { createToolRegistry } from "./modules/tools/index.js";
@@ -35,6 +36,7 @@ export interface Services {
   orchestrator: Orchestrator;
   auth: AuthService;
   access: AccessService;
+  accessRequests: AccessRequestService;
 }
 
 /** Infrastructure adapters that tests may replace. */
@@ -82,7 +84,11 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
     vectors,
     { limit: config.rag.retrievalLimit, scoreThreshold: config.rag.scoreThreshold },
     (principal, documentIds) => access.readableIds(principal, documentIds),
+    config.rag.accessDenialMode === "acknowledge"
+      ? { finder: (p, candidates) => access.withheldMatches(p, candidates), scoreThreshold: config.rag.restrictedNoticeThreshold }
+      : undefined,
   );
+  const accessRequests = new AccessRequestService(prisma, access);
   const ingestion = new IngestionService(
     prisma,
     embeddings,
@@ -99,11 +105,12 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
     prisma,
     retrieval,
     timeoutMs: config.orchestrator.toolTimeoutMs,
+    acknowledgeRestricted: config.rag.accessDenialMode === "acknowledge",
     onUnexpectedError: (tool, err) => log.error({ tool, err }, "tool failed unexpectedly"),
   });
   const chatRepository = new PrismaChatRepository(prisma);
   const orchestrator = new Orchestrator(llm, tools, chatRepository, config.orchestrator, log);
   const auth = new AuthService(prisma, config.auth.allowRegistration);
 
-  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access };
+  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests };
 }

@@ -87,7 +87,9 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/:id", async (req) => {
     const { id } = parse(UuidParam, req.params);
-    return app.services.chatRepository.getConversation(req.currentUser.id, id);
+    return app.services.chatRepository.getConversation(req.currentUser.id, id, (messageIds) =>
+      app.services.accessRequests.statusesForMessages(req.currentUser.id, messageIds),
+    );
   });
 
   app.delete("/:id", async (req, reply) => {

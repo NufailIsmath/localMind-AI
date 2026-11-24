@@ -41,6 +41,11 @@ export interface VectorStore {
   ensureCollection(): Promise<void>;
   upsert(points: VectorPoint[]): Promise<void>;
   search(params: VectorSearchParams): Promise<VectorSearchHit[]>;
+  /**
+   * Access-UNFILTERED search returning only document ids and scores — never
+   * content. Used solely to tell a user "a confidential document matched".
+   */
+  matchingDocuments(vector: number[], limit: number, scoreThreshold: number): Promise<{ documentId: string; score: number }[]>;
   deleteByDocument(documentId: string): Promise<void>;
   /** Rewrites the access fields of every chunk of a document (after sharing changes). */
   setAccess(documentId: string, access: AccessPayload): Promise<void>;
@@ -87,7 +92,7 @@ export class QdrantVectorStore implements VectorStore {
           );
         }
       }
-      for (const field of ["userId", "documentId", "visibility", "groupIds"]) {
+      for (const field of ["userId", "documentId", "visibility", "groupIds", "userIds"]) {
         await this.client.createPayloadIndex(this.collection, { field_name: field, field_schema: "keyword", wait: true });
       }
       await this.client.createPayloadIndex(this.collection, { field_name: "classificationLevel", field_schema: "integer", wait: true });
@@ -126,6 +131,18 @@ export class QdrantVectorStore implements VectorStore {
       score: p.score,
       payload: p.payload as unknown as ChunkPayload,
     }));
+  }
+
+  async matchingDocuments(vector: number[], limit: number, scoreThreshold: number) {
+    const res = await this.call("matchingDocuments", () =>
+      this.client.query(this.collection, {
+        query: vector,
+        limit,
+        score_threshold: scoreThreshold,
+        with_payload: { include: ["documentId"] },
+      }),
+    );
+    return res.points.map((p) => ({ documentId: String((p.payload as { documentId: string }).documentId), score: p.score }));
   }
 
   async deleteByDocument(documentId: string): Promise<void> {

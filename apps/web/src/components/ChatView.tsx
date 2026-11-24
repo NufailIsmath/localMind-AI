@@ -1,9 +1,10 @@
 "use client";
 
-import type { ChatStreamEvent, MessageDto, Source, ToolExecutionSummary } from "@localmind/shared";
+import type { ChatStreamEvent, MessageDto, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@localmind/shared";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, ApiError, streamChat } from "@/lib/api";
 import { Markdown } from "./Markdown";
+import { RestrictedCard } from "./RestrictedCard";
 import { Sources } from "./Sources";
 import { ToolActivity, type PendingTool } from "./ToolActivity";
 
@@ -20,7 +21,19 @@ interface Draft {
   pending: PendingTool[];
 }
 
-function AssistantMessage({ message }: { message: Pick<MessageDto, "id" | "content" | "sources" | "toolExecutions"> }) {
+function AssistantMessage({
+  message,
+  token,
+  question,
+  onSend,
+  onNoticeStatus,
+}: {
+  message: Pick<MessageDto, "id" | "content" | "sources" | "toolExecutions" | "restricted">;
+  token: string;
+  question?: string;
+  onSend: (text: string) => void;
+  onNoticeStatus: (noticeId: string, status: RestrictedNoticeDto["requestStatus"]) => void;
+}) {
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const cite = (ref: string) => {
     setHighlighted(ref);
@@ -30,6 +43,17 @@ function AssistantMessage({ message }: { message: Pick<MessageDto, "id" | "conte
     <article className="msg msg-assistant">
       <ToolActivity executions={message.toolExecutions} />
       <Markdown text={message.content} onCite={cite} />
+      {message.restricted.map((n) => (
+        <RestrictedCard
+          key={n.id}
+          notice={n}
+          messageId={message.id}
+          token={token}
+          question={question}
+          onSend={onSend}
+          onStatusChange={(s) => onNoticeStatus(n.id, s)}
+        />
+      ))}
       <Sources sources={message.sources} highlighted={highlighted} idPrefix={message.id} />
     </article>
   );
@@ -99,6 +123,7 @@ export function ChatView({
         role: "USER",
         content: message,
         sources: [],
+        restricted: [],
         toolExecutions: [],
         createdAt: new Date().toISOString(),
       };
@@ -145,6 +170,7 @@ export function ChatView({
                 role: "ASSISTANT",
                 content: r.answer,
                 sources: r.sources as Source[],
+                restricted: r.restricted,
                 toolExecutions: r.toolExecutions,
                 createdAt: new Date().toISOString(),
               },
@@ -200,13 +226,26 @@ export function ChatView({
             </div>
           </div>
         )}
-        {messages.map((m) =>
+        {messages.map((m, i) =>
           m.role === "USER" ? (
             <article key={m.id} className="msg msg-user">
               <p>{m.content}</p>
             </article>
           ) : (
-            <AssistantMessage key={m.id} message={m} />
+            <AssistantMessage
+              key={m.id}
+              message={m}
+              token={token}
+              question={messages[i - 1]?.role === "USER" ? messages[i - 1]!.content : undefined}
+              onSend={(text) => void send(text)}
+              onNoticeStatus={(noticeId, status) =>
+                setMessages((all) =>
+                  all.map((x) =>
+                    x.id === m.id ? { ...x, restricted: x.restricted.map((n) => (n.id === noticeId ? { ...n, requestStatus: status } : n)) } : x,
+                  ),
+                )
+              }
+            />
           ),
         )}
         {draft && (

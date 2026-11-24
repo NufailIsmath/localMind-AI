@@ -33,6 +33,13 @@ export class InMemoryVectorStore implements VectorStore {
       .sort((a, b) => b.score - a.score)
       .slice(0, params.limit);
   }
+  async matchingDocuments(vector: number[], limit: number, scoreThreshold: number) {
+    return [...this.points.values()]
+      .map((p) => ({ documentId: p.payload.documentId, score: cosine(p.vector, vector) }))
+      .filter((h) => h.score >= scoreThreshold)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
   async deleteByDocument(documentId: string) {
     for (const [id, p] of this.points) {
       if (p.payload.documentId === documentId) this.points.delete(id);

@@ -1,4 +1,5 @@
 import type {
+  AccessRequestDto,
   ApiErrorBody,
   AuditEventDto,
   DocumentAccessRequest,
@@ -96,6 +97,15 @@ export const api = {
   reindexDocument: (token: string, id: string) => request<DocumentDto>(`/api/documents/${id}/reindex`, { method: "POST", token }),
   updateDocumentAccess: (token: string, id: string, body: DocumentAccessRequest) =>
     request<DocumentDto>(`/api/documents/${id}/access`, { method: "PATCH", token, json: body }),
+  revokeGrant: (token: string, documentId: string, userId: string) =>
+    request<void>(`/api/documents/${documentId}/grants/${userId}`, { method: "DELETE", token }),
+  accessRequests: {
+    create: (token: string, messageId: string, noticeId: string, note?: string) =>
+      request<AccessRequestDto>("/api/access-requests", { method: "POST", token, json: { messageId, noticeId, ...(note ? { note } : {}) } }),
+    list: (token: string) => request<{ incoming: AccessRequestDto[]; outgoing: AccessRequestDto[] }>("/api/access-requests", { token }),
+    decide: (token: string, id: string, approve: boolean) =>
+      request<AccessRequestDto>(`/api/access-requests/${id}/${approve ? "approve" : "deny"}`, { method: "POST", token }),
+  },
   admin: {
     users: (token: string) => request<AdminUserDto[]>("/api/admin/users", { token }),
     updateUser: (token: string, id: string, body: UpdateUserAccessRequest) =>

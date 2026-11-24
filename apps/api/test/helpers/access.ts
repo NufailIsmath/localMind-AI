@@ -15,4 +15,5 @@ export const privateAccess = (userId: string): AccessPayload => ({
   classification: "INTERNAL",
   classificationLevel: 1,
   groupIds: [],
+  userIds: [],
 });

@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { RetrievedChunk } from "../../rag/retrieval.service.js";
+import type { RetrievedChunk, WithheldMatch } from "../../rag/retrieval.service.js";
 import type { AccessPrincipal } from "../access/access.policy.js";
 
 export type Role = "USER" | "ADMIN";
@@ -17,6 +17,8 @@ export interface ToolContext {
   signal: AbortSignal;
   /** Registers retrieved chunks as citable sources; returns their refs (S1, S2…). */
   addSources(chunks: RetrievedChunk[], query?: string): string[];
+  /** Registers "that's confidential" notices for documents the user can't read; returns their refs (R1…). */
+  addRestricted(matches: WithheldMatch[]): string[];
 }
 
 export interface ToolDefinition<S extends z.ZodType = z.ZodType> {

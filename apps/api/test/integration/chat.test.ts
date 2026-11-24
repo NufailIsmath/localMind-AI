@@ -97,7 +97,7 @@ describe.runIf(infraReady)("chat API: orchestration, RAG and tool calling end-to
     const body = (await chat(bob, { message: "How many days of sick leave do employees receive?" })).json<ChatResponse>();
     expect(body.toolExecutions[0]).toMatchObject({ tool: "search_knowledge", status: "SUCCESS" });
     expect(body.sources).toEqual([]);
-    expect(body.answer).toBe("I couldn't find anything about that in your documents.");
+    expect(body.answer).toContain("couldn't find anything about that in your documents");
   });
 
   it("enforces tool permissions even if the model requests a forbidden tool", async () => {

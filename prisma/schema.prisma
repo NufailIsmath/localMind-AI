@@ -47,6 +47,12 @@ enum MessageRole {
   ASSISTANT
 }
 
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
 enum ToolExecutionStatus {
   SUCCESS
   ERROR
@@ -62,10 +68,50 @@ model User {
   clearance    Classification @default(INTERNAL)
   createdAt    DateTime       @default(now())
 
-  conversations Conversation[]
-  documents     Document[]
-  memberships   GroupMembership[]
-  auditEvents   AuditEvent[]
+  conversations   Conversation[]
+  documents       Document[]
+  memberships     GroupMembership[]
+  auditEvents     AuditEvent[]
+  documentGrants  DocumentUserAccess[] @relation("grantee")
+  accessRequests  AccessRequest[]      @relation("requester")
+  decidedRequests AccessRequest[]      @relation("decider")
+}
+
+/// An individual grant (e.g. an approved access request). Clearance still applies.
+model DocumentUserAccess {
+  documentId  String   @db.Uuid
+  userId      String   @db.Uuid
+  grantedById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation("grantee", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, userId])
+  @@index([userId])
+}
+
+/// "Can I see that?" — raised from a restricted-content notice in a chat answer.
+model AccessRequest {
+  id          String              @id @default(uuid()) @db.Uuid
+  documentId  String              @db.Uuid
+  requesterId String              @db.Uuid
+  /// Chat message + notice the request was raised from
+  messageId   String?             @db.Uuid
+  noticeId    String?
+  note        String?
+  status      AccessRequestStatus @default(PENDING)
+  decidedById String?             @db.Uuid
+  decidedAt   DateTime?
+  createdAt   DateTime            @default(now())
+
+  document  Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  requester User     @relation("requester", fields: [requesterId], references: [id], onDelete: Cascade)
+  decidedBy User?    @relation("decider", fields: [decidedById], references: [id], onDelete: SetNull)
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([documentId, status])
+  @@index([requesterId, createdAt])
 }
 
 /// A team/department documents can be shared with (e.g. HR, Executives).
@@ -139,10 +185,13 @@ model Message {
   content        String
   /// Citations attached to an assistant answer (Source[] from @localmind/shared)
   sources        Json?
+  /// Restricted-content notices (server-side; includes document ids never sent to clients)
+  restricted     Json?
   createdAt      DateTime    @default(now())
 
   conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   toolExecutions ToolExecution[]
+  accessRequests AccessRequest[]
 
   @@index([conversationId, createdAt])
 }
@@ -166,9 +215,11 @@ model Document {
   uploadedAt     DateTime           @default(now())
   indexedAt      DateTime?
 
-  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chunks      DocumentChunk[]
-  groupAccess DocumentGroupAccess[]
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks         DocumentChunk[]
+  groupAccess    DocumentGroupAccess[]
+  userAccess     DocumentUserAccess[]
+  accessRequests AccessRequest[]
 
   @@unique([userId, contentHash])
   @@index([visibility, status])

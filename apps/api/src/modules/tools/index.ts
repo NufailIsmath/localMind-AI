@@ -10,10 +10,11 @@ export function createToolRegistry(deps: {
   prisma: PrismaClient;
   retrieval: RetrievalService;
   timeoutMs: number;
+  acknowledgeRestricted?: boolean;
   onUnexpectedError?: (tool: string, err: unknown) => void;
 }): ToolRegistry {
   return new ToolRegistry(deps.timeoutMs, deps.onUnexpectedError)
-    .register(searchKnowledgeTool(deps.retrieval))
+    .register(searchKnowledgeTool(deps.retrieval, 10, deps.acknowledgeRestricted ?? true))
     .register(getCurrentTimeTool())
     .register(calculatorTool)
     .register(listDocumentsTool(deps.prisma))

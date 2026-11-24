@@ -1,7 +1,11 @@
 import type { Classification, DocumentVisibility, Prisma, PrismaClient } from "@prisma/client";
 import { badRequest, conflict, errorMessage, forbidden, notFound } from "../../lib/errors.js";
 import type { VectorStore } from "../../rag/vector.service.js";
-import { accessibleDocumentsWhere, toAccessPayload, type AccessPrincipal } from "./access.policy.js";
+import type { WithheldMatch } from "../../rag/retrieval.service.js";
+import { accessibleDocumentsWhere, canRead, classificationLevel, toAccessPayload, type AccessPrincipal } from "./access.policy.js";
+
+/** At most this many "that's confidential" notices per search. */
+const MAX_NOTICES = 2;
 
 export interface SharingInput {
   visibility?: DocumentVisibility;
@@ -23,6 +27,7 @@ export interface AccessLogger {
 export const DOCUMENT_INCLUDE = {
   user: { select: { email: true } },
   groupAccess: { include: { group: { select: { id: true, name: true } } } },
+  userAccess: { include: { user: { select: { id: true, email: true } } } },
 } satisfies Prisma.DocumentInclude;
 
 export type DocumentWithAccess = Prisma.DocumentGetPayload<{ include: typeof DOCUMENT_INCLUDE }>;
@@ -174,11 +179,60 @@ export class AccessService {
     return updated;
   }
 
+  /**
+   * Classifies strong matches the principal can't read. Deliberately narrow:
+   * only READY documents shared with a team or the organisation are ever
+   * acknowledged — someone's PRIVATE files are never hinted at — and only
+   * classification + audience are disclosed, never title or content.
+   */
+  async withheldMatches(p: AccessPrincipal, candidates: { documentId: string; score: number }[]): Promise<WithheldMatch[]> {
+    const ids = [...new Set(candidates.map((c) => c.documentId))];
+    const docs = await this.prisma.document.findMany({
+      where: { id: { in: ids }, status: "READY", visibility: { in: ["ORGANIZATION", "GROUPS"] }, userId: { not: p.userId } },
+      select: {
+        id: true,
+        userId: true,
+        visibility: true,
+        classification: true,
+        groupAccess: { select: { groupId: true, group: { select: { name: true } } } },
+        userAccess: { select: { userId: true } },
+      },
+    });
+    const byId = new Map(docs.map((d) => [d.id, d]));
+    const out: WithheldMatch[] = [];
+    for (const id of ids) {
+      const d = byId.get(id);
+      if (!d || canRead(p, toAccessPayload(d))) continue;
+      const aboveClearance = classificationLevel(d.classification) > classificationLevel(p.clearance);
+      // One "above your clearance" notice says everything needed (there's nothing to request);
+      // more would only disclose how many restricted documents match.
+      if (aboveClearance && out.some((n) => n.reason === "above_clearance")) continue;
+      out.push({
+        documentId: d.id,
+        reason: aboveClearance ? "above_clearance" : "not_shared",
+        classification: d.classification,
+        sharedWith: d.visibility === "ORGANIZATION" ? ["the whole organization"] : d.groupAccess.map((g) => g.group.name).sort(),
+        canRequest: !aboveClearance,
+      });
+      if (out.length >= MAX_NOTICES) break;
+    }
+    return out;
+  }
+
+  /** Revokes an individual grant (owner or admin). */
+  async revokeGrant(actor: AccessPrincipal, documentId: string, userId: string): Promise<void> {
+    const doc = await this.requireManageable(actor, documentId);
+    const { count } = await this.prisma.documentUserAccess.deleteMany({ where: { documentId, userId } });
+    if (count === 0) throw notFound("Grant not found");
+    await this.audit(actor.userId, "document.grant.revoked", "document", documentId, { filename: doc.filename, userId });
+    await this.syncVectorAccess(documentId);
+  }
+
   /** Copies the document's current access settings from PostgreSQL onto its vectors. */
   async syncVectorAccess(documentId: string): Promise<void> {
     const doc = await this.prisma.document.findUnique({
       where: { id: documentId },
-      select: { userId: true, visibility: true, classification: true, groupAccess: { select: { groupId: true } } },
+      select: { userId: true, visibility: true, classification: true, groupAccess: { select: { groupId: true } }, userAccess: { select: { userId: true } } },
     });
     if (!doc) return;
     try {
