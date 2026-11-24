@@ -24,6 +24,13 @@ describe("rule-based classification", () => {
     expect(s?.reasons.join(" ")).toContain(reasonFragment);
   });
 
+  it("treats markings as markings, not every mention of the word", () => {
+    expect(ruleBasedSuggestion("# Executive Compensation — CONFIDENTIAL\nPrepared by HR.")?.level).toBe("CONFIDENTIAL");
+    expect(ruleBasedSuggestion("Confidential: do not forward.")?.level).toBe("CONFIDENTIAL");
+    expect(ruleBasedSuggestion("Data is classified as Public, Internal, Confidential or Restricted.")).toBeNull();
+    expect(ruleBasedSuggestion("Treat customer data as confidential and store it securely.")).toBeNull();
+  });
+
   it("doesn't flag ordinary text, salary talk without figures, or non-Luhn numbers", () => {
     expect(ruleBasedSuggestion("The cafeteria serves lunch from noon.")).toBeNull();
     expect(ruleBasedSuggestion("We will review salary bands next quarter.")).toBeNull();

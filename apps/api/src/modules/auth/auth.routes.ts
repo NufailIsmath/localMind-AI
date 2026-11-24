@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import type { AuthResponse } from "@localmind/shared";
+import type { AuthResponse } from "@clbuddy/shared";
 import { toUserDto } from "./auth.service.js";
 import { parse } from "../../lib/validation.js";
 

@@ -1,4 +1,4 @@
-# Local infrastructure for LocalMind AI.
+# Local infrastructure for CL Buddy.
 #
 # Every port is bound to 127.0.0.1 on purpose: Qdrant ships without
 # authentication and Ollama has none at all, so neither should ever be
@@ -7,7 +7,7 @@
 #   docker compose -f infrastructure/docker-compose.yml up -d
 #   docker compose -f infrastructure/docker-compose.yml --profile ollama up -d   # also run Ollama in Docker
 
-name: localmind
+name: clbuddy
 
 services:
   qdrant:
@@ -25,24 +25,24 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: localmind
-      POSTGRES_PASSWORD: localmind_dev
-      POSTGRES_DB: localmind
+      POSTGRES_USER: clbuddy
+      POSTGRES_PASSWORD: clbuddy_dev
+      POSTGRES_DB: clbuddy
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U localmind -d localmind"]
+      test: ["CMD-SHELL", "pg_isready -U clbuddy -d clbuddy"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   # Optional: most people run Ollama natively (it can use the Metal/CUDA GPU
   # directly). Enable with `--profile ollama`, then:
-  #   docker exec -it localmind-ollama-1 ollama pull qwen3:8b
-  #   docker exec -it localmind-ollama-1 ollama pull nomic-embed-text
+  #   docker exec -it clbuddy-ollama-1 ollama pull qwen3:8b
+  #   docker exec -it clbuddy-ollama-1 ollama pull nomic-embed-text
   ollama:
     image: ollama/ollama:latest
     profiles: ["ollama"]

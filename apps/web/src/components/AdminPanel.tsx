@@ -1,6 +1,6 @@
 "use client";
 
-import { CLASSIFICATIONS, type AuditEventDto, type Classification, type GroupDto } from "@localmind/shared";
+import { CLASSIFICATIONS, type AuditEventDto, type Classification, type GroupDto } from "@clbuddy/shared";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type AdminUserDto } from "@/lib/api";
 import { CLASSIFICATION_LABELS, relativeTime } from "@/lib/format";
@@ -179,8 +179,19 @@ export function AdminPanel({ token, currentUserId, onClose }: { token: string; c
             <ul className="group-list">
               {groups.map((g) => (
                 <li key={g.id}>
-                  <div>
+                  <div className="group-info">
                     <strong>{g.name}</strong>
+                    <input
+                      className="group-desc"
+                      aria-label={`What ${g.name} handles`}
+                      placeholder="What does this team handle? e.g. payroll, leave, benefits"
+                      defaultValue={g.description ?? ""}
+                      maxLength={200}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v !== (g.description ?? "")) void run(() => api.admin.updateGroup(token, g.id, v || null));
+                      }}
+                    />
                     <div className="muted small">
                       {g.memberCount} member{g.memberCount === 1 ? "" : "s"} · {g.documentCount} document{g.documentCount === 1 ? "" : "s"}
                     </div>

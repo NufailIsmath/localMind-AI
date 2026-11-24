@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import type { HealthDto } from "@localmind/shared";
+import type { HealthDto } from "@clbuddy/shared";
 import { errorMessage } from "../../lib/errors.js";
 
 class MissingModelsError extends Error {}

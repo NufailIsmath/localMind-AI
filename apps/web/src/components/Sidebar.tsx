@@ -1,6 +1,6 @@
 "use client";
 
-import type { ConversationSummaryDto, UserDto } from "@localmind/shared";
+import type { ConversationSummaryDto, UserDto } from "@clbuddy/shared";
 import { CLASSIFICATION_LABELS, relativeTime } from "@/lib/format";
 
 export function Sidebar({

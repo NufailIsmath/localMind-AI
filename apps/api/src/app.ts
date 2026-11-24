@@ -4,7 +4,7 @@ import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
-import type { ApiErrorBody } from "@localmind/shared";
+import type { ApiErrorBody } from "@clbuddy/shared";
 import type { AppConfig } from "./config/env.js";
 import { createServices, type ServiceOverrides, type Services } from "./container.js";
 import { AppError, UpstreamError, unauthorized } from "./lib/errors.js";

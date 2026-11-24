@@ -107,7 +107,7 @@ async function main() {
     files.map(async (f) => ({ name: f, extracted: await extractDocument(f, await readFile(join(root, "documents", f))) })),
   );
 
-  console.log(`\nLocalMind RAG evaluation — ${questions.length} questions, ${files.length} documents, k=${k}`);
+  console.log(`\nCL Buddy RAG evaluation — ${questions.length} questions, ${files.length} documents, k=${k}`);
   console.log(`Embeddings: ${embeddings.model}${llm ? ` · Chat: ${llm.model}` : ""}\n`);
 
   const summary: Record<string, unknown>[] = [];

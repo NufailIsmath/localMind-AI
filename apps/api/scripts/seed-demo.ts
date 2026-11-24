@@ -1,7 +1,7 @@
 /**
  * Seeds a demo organisation for trying document-level access control:
  *
- *   npm run seed:demo -w @localmind/api
+ *   npm run seed:demo -w @clbuddy/api
  *
  * Needs PostgreSQL, Qdrant and Ollama (or `npm run mock:ollama`) running.
  * Idempotent: re-running updates roles/clearances and skips existing files.
@@ -12,6 +12,7 @@
  *   hr@demo.local                       USER   Confidential   HR
  *   engineer@demo.local                 USER   Confidential   Engineering
  *   intern@demo.local                   USER   Internal       Engineering
+ *   it@demo.local                       USER   Internal       IT Support
  *
  *   Document                      Shared with         Classification
  *   employee-handbook.md          Organization        Internal
@@ -21,6 +22,7 @@
  *   board-strategy.md             Organization        Restricted
  *   engineering-roadmap.md        Engineering         Internal
  *   hr-onboarding-checklist.md    HR                  Internal
+ *   it-support-guide.md           Organization        Internal
  *
  * Re-running also clears individual grants and access requests on these
  * documents, so the demo (and the E2E suite) start from a known state.
@@ -33,7 +35,14 @@ import { loadConfig } from "../src/config/env.js";
 import { hashPassword } from "../src/modules/auth/password.js";
 
 const PASSWORD = "demo-password";
-const GROUPS = ["Executives", "HR", "Engineering"] as const;
+const GROUPS = ["Executives", "HR", "Engineering", "IT Support"] as const;
+/** What each team handles — CL Buddy's find_team tool uses this to route people. */
+const GROUP_DESCRIPTIONS: Record<(typeof GROUPS)[number], string> = {
+  Executives: "Company strategy, budgets, approvals above 500 USD, board matters",
+  HR: "Leave, payroll, salary questions, benefits, onboarding, expenses, workplace concerns",
+  Engineering: "Product development, code reviews, on-call, technical roadmap",
+  "IT Support": "Laptops, hardware, accounts, passwords, software requests, lost devices",
+};
 type GroupName = (typeof GROUPS)[number];
 
 const PEOPLE: { email: string; role: "USER" | "ADMIN"; clearance: Classification; groups: GroupName[] }[] = [
@@ -42,6 +51,7 @@ const PEOPLE: { email: string; role: "USER" | "ADMIN"; clearance: Classification
   { email: "hr@demo.local", role: "USER", clearance: "CONFIDENTIAL", groups: ["HR"] },
   { email: "engineer@demo.local", role: "USER", clearance: "CONFIDENTIAL", groups: ["Engineering"] },
   { email: "intern@demo.local", role: "USER", clearance: "INTERNAL", groups: ["Engineering"] },
+  { email: "it@demo.local", role: "USER", clearance: "INTERNAL", groups: ["IT Support"] },
 ];
 
 const root = resolve(import.meta.dirname, "../eval");
@@ -52,6 +62,7 @@ const DOCS: { file: string; owner: string; visibility: DocumentVisibility; class
   { file: "demo-org/executive-compensation.md", owner: "hr@demo.local", visibility: "GROUPS", classification: "CONFIDENTIAL", groups: ["HR", "Executives"] },
   { file: "demo-org/board-strategy.md", owner: "ceo@demo.local", visibility: "ORGANIZATION", classification: "RESTRICTED" },
   { file: "demo-org/engineering-roadmap.md", owner: "engineer@demo.local", visibility: "GROUPS", classification: "INTERNAL", groups: ["Engineering"] },
+  { file: "demo-org/it-support-guide.md", owner: "it@demo.local", visibility: "ORGANIZATION", classification: "INTERNAL" },
   { file: "demo-org/hr-onboarding-checklist.md", owner: "hr@demo.local", visibility: "GROUPS", classification: "INTERNAL", groups: ["HR"] },
 ];
 
@@ -62,7 +73,8 @@ async function main() {
 
   const groupIds = {} as Record<GroupName, string>;
   for (const name of GROUPS) {
-    const g = await prisma.group.upsert({ where: { name }, update: {}, create: { name } });
+    const description = GROUP_DESCRIPTIONS[name];
+    const g = await prisma.group.upsert({ where: { name }, update: { description }, create: { name, description } });
     groupIds[name] = g.id;
   }
 

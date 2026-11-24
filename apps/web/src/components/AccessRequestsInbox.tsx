@@ -1,6 +1,6 @@
 "use client";
 
-import type { AccessRequestDto } from "@localmind/shared";
+import type { AccessRequestDto } from "@clbuddy/shared";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { CLASSIFICATION_LABELS, relativeTime } from "@/lib/format";

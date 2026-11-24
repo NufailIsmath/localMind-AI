@@ -1,6 +1,6 @@
 "use client";
 
-import type { DocumentAccessRequest, DocumentDto, GroupRefDto, UserDto } from "@localmind/shared";
+import type { DocumentAccessRequest, DocumentDto, GroupRefDto, UserDto } from "@clbuddy/shared";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { CLASSIFICATION_LABELS, formatBytes, relativeTime } from "@/lib/format";

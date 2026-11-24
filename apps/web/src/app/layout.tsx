@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LocalMind AI",
+  title: "CL Buddy",
   description: "A private, local-first AI assistant with document knowledge and tools.",
 };
 

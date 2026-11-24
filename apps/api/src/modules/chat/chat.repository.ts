@@ -6,7 +6,7 @@ import type {
   Source,
   ToolExecutionStatus,
   ToolExecutionSummary,
-} from "@localmind/shared";
+} from "@clbuddy/shared";
 import { notFound } from "../../lib/errors.js";
 import type { StoredNotice } from "../access/access-requests.service.js";
 import { toNoticeDto } from "../../ai/orchestrator.service.js";

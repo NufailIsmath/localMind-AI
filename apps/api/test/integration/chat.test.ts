@@ -1,5 +1,5 @@
 import type { AddressInfo } from "node:net";
-import type { ChatResponse, ChatStreamEvent, ConversationDto, ConversationSummaryDto, ToolInfoDto } from "@localmind/shared";
+import type { ChatResponse, ChatStreamEvent, ConversationDto, ConversationSummaryDto, ToolInfoDto } from "@clbuddy/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auth, createHarness, infraReady, type Harness } from "./harness.js";
 

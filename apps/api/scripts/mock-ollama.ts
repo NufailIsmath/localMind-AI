@@ -2,7 +2,7 @@
  * Starts a rule-based fake Ollama server for demos/E2E tests on machines that
  * can't run the real models:
  *
- *   npm run mock:ollama -w @localmind/api    # listens on 127.0.0.1:11434
+ *   npm run mock:ollama -w @clbuddy/api    # listens on 127.0.0.1:11434
  *
  * Answers are pattern-matched, not generated. Use real Ollama for anything else.
  */

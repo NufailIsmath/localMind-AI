@@ -93,8 +93,20 @@ export const RULES: Rule[] = [
     reason: "Discusses mergers, acquisitions or unannounced deals",
     test: near(/\b(?:acquisition|acquire|merger|takeover)\b/, /\b(?:board|approved|due diligence|announce|confidential)\b/, 200),
   },
-  { level: "CONFIDENTIAL", reason: "Marked “Confidential”", test: (t) => /\bconfidential\b/i.test(t.slice(0, 2000)) },
-  { level: "INTERNAL", reason: "Marked “Internal”", test: (t) => /\binternal (?:only|use)\b/i.test(t.slice(0, 2000)) },
+  // Markings, not mentions: "— CONFIDENTIAL", "Confidential:", an all-caps CONFIDENTIAL or "for internal use
+  // only" — but not prose like "data is classified as Public, Internal, Confidential or Restricted".
+  {
+    level: "CONFIDENTIAL",
+    reason: "Marked “Confidential”",
+    test: (t) => {
+      const head = t.slice(0, 2000);
+      return (
+        /\bCONFIDENTIAL\b/.test(head) || // all-caps marking (case-sensitive on purpose)
+        /[—–|:-]\s*confidential\b|\bconfidential\s*[—–|:]|\b(?:private and|commercial in) confidence\b/i.test(head)
+      );
+    },
+  },
+  { level: "INTERNAL", reason: "Marked “Internal”", test: (t) => /\b(?:for )?internal (?:use )?only\b|\binternal use\b/i.test(t.slice(0, 2000)) },
 ];
 
 const maxLevel = (a: Classification, b: Classification) => (classificationLevel(a) >= classificationLevel(b) ? a : b);

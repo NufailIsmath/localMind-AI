@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
-import type { AuditEventDto, GroupDto } from "@localmind/shared";
+import type { AuditEventDto, GroupDto } from "@clbuddy/shared";
 import { forbidden } from "../../lib/errors.js";
 import { UuidParam, parse } from "../../lib/validation.js";
 import { CLASSIFICATIONS } from "../access/access.policy.js";
@@ -67,6 +67,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       req.body,
     );
     return reply.code(201).send(toGroupDto(await access.createGroup(req.principal, body.name, body.description)));
+  });
+
+  app.patch("/groups/:id", async (req) => {
+    const { id } = parse(UuidParam, req.params);
+    const body = parse(z.object({ description: z.string().trim().max(200).nullable() }), req.body);
+    return toGroupDto(await access.updateGroup(req.principal, id, body.description || null));
   });
 
   app.delete("/groups/:id", async (req, reply) => {

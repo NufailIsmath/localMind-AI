@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode } from "react";
+import { DraftCard } from "./DraftCard";
 
 /**
  * A small, safe Markdown renderer (no dangerouslySetInnerHTML): code blocks,
@@ -22,10 +23,15 @@ export function Markdown({ text, onCite }: { text: string; onCite?: (ref: string
   while (i < lines.length) {
     const line = lines[i]!;
     if (line.startsWith("```")) {
+      const lang = line.slice(3).trim().toLowerCase();
       const code: string[] = [];
       i++;
       while (i < lines.length && !lines[i]!.startsWith("```")) code.push(lines[i++]!);
       i++;
+      if (lang === "email" || lang === "message") {
+        blocks.push(<DraftCard key={key++} kind={lang} text={code.join("\n")} />);
+        continue;
+      }
       blocks.push(
         <pre key={key++}>
           <code>{code.join("\n")}</code>

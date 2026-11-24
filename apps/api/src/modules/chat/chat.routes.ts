@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import type { ChatStreamEvent } from "@localmind/shared";
+import type { ChatStreamEvent } from "@clbuddy/shared";
 import { AppError, UpstreamError } from "../../lib/errors.js";
 import { UuidParam, parse } from "../../lib/validation.js";
 
@@ -27,6 +27,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
     try {
       return await app.services.orchestrator.run({
         user: req.principal,
+        profile: { email: req.currentUser.email, teams: req.currentUser.groups.map((g) => g.name) },
         conversationId: body.conversationId,
         message: body.message,
         signal: controller.signal,
@@ -67,6 +68,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
     try {
       await app.services.orchestrator.run({
         user: req.principal,
+        profile: { email: req.currentUser.email, teams: req.currentUser.groups.map((g) => g.name) },
         conversationId: body.conversationId,
         message: body.message,
         signal: controller.signal,

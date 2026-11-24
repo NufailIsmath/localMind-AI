@@ -71,10 +71,22 @@ function decide(messages: OllamaMessage[], toolNames: Set<string>): { content: s
   if (toolNames.size === 0 && toolResults.length > 0) {
     return { content: "Based on the information gathered so far, I cannot give a more complete answer.", toolCalls: [] };
   }
+  const wantsDraft = DRAFT.test(userText);
   // Second step: answer from tool results.
+  if (toolResults.length > 0 && wantsDraft) {
+    const team = JSON.parse(toolResults.at(-1)!.content) as ToolPayload;
+    const found = team.tool === "find_team" ? team.data?.teams?.[0] : undefined;
+    return { content: draftReply(userText, found?.contacts?.[0], found?.team), toolCalls: [] };
+  }
   if (toolResults.length > 0) {
     const parts = toolResults.map((m) => answerFromTool(JSON.parse(m.content) as ToolPayload, userText));
     return { content: parts.join("\n\n"), toolCalls: [] };
+  }
+
+  if (wantsDraft) {
+    const team = userText.match(TEAM)?.[1];
+    if (team && toolNames.has("find_team")) return call("find_team", { query: team });
+    return { content: draftReply(userText), toolCalls: [] };
   }
 
   const calc = userText.match(CALC);
@@ -88,9 +100,40 @@ function decide(messages: OllamaMessage[], toolNames: Set<string>): { content: s
   }
   if (/\b(stats|statistics|usage)\b/i.test(userText) && toolNames.has("get_usage_stats")) return call("get_usage_stats", {});
   if (/^\s*(hi|hello|hey|thanks|thank you|what can you)\b/i.test(userText) || !toolNames.has("search_knowledge")) {
-    return { content: "Hey! 👋 I'm LocalMind. Ask me anything about your team's documents, or throw me a calculation. What's on your mind?", toolCalls: [] };
+    return { content: "Hey! 👋 I'm CL Buddy, your work buddy. I can find answers in company docs, help you sort out a work issue step by step, or draft an email for you. What's on your mind?", toolCalls: [] };
   }
   return call("search_knowledge", { query: userText.replace(/[?!.]+$/, "") });
+}
+
+const DRAFT = /\b(?:draft|write|compose|prepare)\b[^.?!]*\b(?:e-?mail|mail|message|note|reply)\b/i;
+const TEAM = /\b(hr|it|finance|payroll|engineering|executives?|security|people ops)\b/i;
+const GUIDANCE = /\b(?:how do i|how can i|what should i do|what do i do|broken|broke|not working|issue|problem|sort (?:this|it) out|claim)\b/i;
+
+/** Builds an ```email draft block from the request, the way the real model is prompted to. */
+function draftReply(request: string, to?: string, team?: string): string {
+  const topic = request.match(/\b(?:asking (?:for|about)|about|regarding|requesting|to request|for)\s+(.+?)(?:[.?!]|$)/i)?.[1]?.trim();
+  const subject = topic ? topic.charAt(0).toUpperCase() + topic.slice(1, 70) : "Quick request";
+  const greeting = team ? `Hi ${team} team,` : "Hi,";
+  return [
+    "Sure! Here's a draft you can send:",
+    "",
+    "```email",
+    `To: ${to ?? ""}`,
+    "Cc:",
+    `Subject: ${subject}`,
+    "",
+    greeting,
+    "",
+    `I hope you're well. I'm writing ${topic ? `about ${topic}` : "with a quick request"}. [Add any details here.]`,
+    "",
+    "Could you let me know the next steps?",
+    "",
+    "Thanks,",
+    "[Your name]",
+    "```",
+    "",
+    "Want me to make it shorter or more formal?",
+  ].join("\n");
 }
 
 const words = (s: string) => new Set((s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => w.length > 2));
@@ -130,8 +173,29 @@ function answerFromTool(p: ToolPayload, question: string): string {
       if (!d.results?.length) return denial || "Hmm, I couldn't find anything about that in your documents. Want to try different wording?";
       const top = d.results[0];
       const sentence = bestSentence(String(top.content), question);
+      if (GUIDANCE.test(question)) {
+        const rest = String(top.content).replace(sentence, "");
+        const second = bestSentence(rest, question);
+        const hasSecond = Boolean(second) && second !== sentence;
+        return [
+          "Ah, that's annoying — let's get it sorted. 🙌",
+          "",
+          "Here's what to do:",
+          `1. ${sentence} [${top.ref}]`,
+          ...(hasSecond ? [`2. ${second} [${top.ref}]`] : []),
+          `${hasSecond ? 3 : 2}. If you get stuck, reach out to the team that owns it and mention what you've tried.`,
+          "",
+          "Want me to draft the email for you?",
+        ].join("\n");
+      }
       const answer = `According to ${top.fileName}${top.pages ? ` (page ${top.pages})` : ""}: "${sentence}" [${top.ref}]`;
       return denial ? `${answer}\n\nOne more thing: ${denial.charAt(0).toLowerCase()}${denial.slice(1)}` : answer;
+    }
+    case "find_team": {
+      const t = d.teams?.[0];
+      return t
+        ? `That's ${t.team}${t.handles ? ` (they handle ${String(t.handles).toLowerCase()})` : ""}. You can reach them at ${t.contacts.join(", ") || "their team channel"}.`
+        : "I couldn't find a team for that.";
     }
     case "calculate":
       return `The result of ${d.expression} is **${d.result}**.`;

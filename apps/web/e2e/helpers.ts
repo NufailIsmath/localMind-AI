@@ -9,7 +9,7 @@ export async function signUp(page: Page) {
   await page.getByLabel("Email").fill(`e2e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@example.com`);
   await page.getByLabel("Password").fill("password123");
   await page.getByRole("button", { name: "Create account" }).last().click();
-  await expect(page.getByText("How can I help?")).toBeVisible();
+  await expect(page.getByText("What can I help you sort out today?")).toBeVisible();
 }
 
 export async function ask(page: Page, text: string) {

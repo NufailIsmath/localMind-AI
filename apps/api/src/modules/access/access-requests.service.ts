@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import type { AccessRequestDto } from "@localmind/shared";
+import type { AccessRequestDto } from "@clbuddy/shared";
 import { badRequest, conflict, forbidden, notFound } from "../../lib/errors.js";
 import { classificationLevel, type AccessPrincipal } from "./access.policy.js";
 import type { AccessService } from "./access.service.js";

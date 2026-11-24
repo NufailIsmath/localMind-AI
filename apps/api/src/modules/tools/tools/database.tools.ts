@@ -49,7 +49,7 @@ export const usageStatsTool = (prisma: PrismaClient) =>
   defineTool({
     name: "get_usage_stats",
     description:
-      "Get statistics about the user's LocalMind account: number of documents, indexed chunks, conversations, " +
+      "Get statistics about the user's CL Buddy account: number of documents, indexed chunks, conversations, " +
       "messages and the most used tools.",
     schema: z.object({}),
     async execute(_args, ctx) {

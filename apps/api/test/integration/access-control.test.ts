@@ -1,4 +1,4 @@
-import type { ChatResponse, DocumentDto, GroupDto } from "@localmind/shared";
+import type { ChatResponse, DocumentDto, GroupDto } from "@clbuddy/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { toPrincipal } from "../../src/modules/access/access.service.js";
 import { auth, createHarness, infraReady, type Harness } from "./harness.js";

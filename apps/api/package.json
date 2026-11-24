@@ -1,5 +1,5 @@
 {
-  "name": "@localmind/api",
+  "name": "@clbuddy/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -21,7 +21,7 @@
     "@fastify/jwt": "10.2.9",
     "@fastify/multipart": "10.1.9",
     "@fastify/rate-limit": "11.3.0",
-    "@localmind/shared": "0.1.0",
+    "@clbuddy/shared": "0.1.0",
     "@qdrant/js-client-rest": "1.15.1",
     "fastify": "5.12.8",
     "mammoth": "1.13.0",

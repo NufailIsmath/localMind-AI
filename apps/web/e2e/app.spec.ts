@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { DOCS, ask, signUp } from "./helpers";
 
-test.describe("LocalMind", () => {
+test.describe("CL Buddy", () => {
   test("upload documents, get a cited answer, use tools and restore history", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
@@ -37,7 +37,7 @@ test.describe("LocalMind", () => {
     await page.keyboard.press("Enter");
     await expect(page.locator(".error.banner")).toContainText("AI backend is unavailable");
     const ok = await ask(page, "hello");
-    await expect(ok).toContainText("LocalMind");
+    await expect(ok).toContainText("CL Buddy");
   });
 
   test("switching conversations mid-stream does not leak the answer into another chat", async ({ page }) => {

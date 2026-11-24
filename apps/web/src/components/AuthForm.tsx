@@ -1,6 +1,6 @@
 "use client";
 
-import type { AuthResponse } from "@localmind/shared";
+import type { AuthResponse } from "@clbuddy/shared";
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 
@@ -36,7 +36,7 @@ export function AuthForm({ onAuthenticated }: { onAuthenticated: (auth: AuthResp
           <span className="brand-mark" aria-hidden>
             ◆
           </span>
-          LocalMind
+          CL Buddy
         </div>
         <p className="muted">A private AI assistant that runs on your machine. Your documents never leave it.</p>
 

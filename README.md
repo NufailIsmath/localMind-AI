@@ -1,6 +1,11 @@
-# LocalMind AI
+# CL Buddy
 
-A **local-first AI assistant** that can read your documents, retrieve relevant knowledge, query a database and run tools — with **no cloud LLM API and no API keys**. Everything (model inference, embeddings, vector search, storage) runs on your own machine.
+**Your work buddy.** CL Buddy is a private, local-first AI assistant for everyone at the company:
+- **Answers from company documents:** policies, guides, handbooks.
+- **Helps sort out work issues step by step:** what to do, who to contact, what to have ready.
+- **Drafts emails and messages:** ready to copy or open in your mail app.
+
+It runs with **no cloud LLM API and no API keys**. Model inference, embeddings, vector search and storage all stay on your own machines.
 
 Built to show the parts of AI engineering beyond "call an LLM API": local inference, embeddings and semantic search, a hand-written RAG pipeline, native tool calling with a security boundary, orchestration, observability and measurable retrieval quality.
 
@@ -12,6 +17,22 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 | **Frontend** | Next.js 16 · React 19 (streaming chat UI) |
 | **Testing** | Vitest — 102 unit + 118 integration tests (real Postgres/Qdrant), 13 Playwright E2E, security suite, RAG evaluation harness |
 | **Infra** | Docker Compose |
+
+## What CL Buddy does for people
+
+| Ask… | CL Buddy… |
+|---|---|
+| *"My laptop isn't working, what should I do?"* | Acknowledges it, checks the IT guide, gives numbered steps with citations (restart → ticket with asset tag → loaner laptop), says who handles it, offers to draft the ticket email |
+| *"Draft an email to HR asking for annual leave from 2 to 6 March"* | Looks up who handles leave (`find_team`), then writes a draft addressed to the real HR contact, shown as an **email card** with **Copy** and **Open in email app** |
+| *"How do I claim back expenses?"* | Answers from the handbook (deadline, receipts, approval limits) and offers to draft the claim note |
+| *"What's the CEO's salary?"* (as an intern) | *"Ha, good one, but my lips are sealed! 🤐"* (see [Access control](#access-control)) |
+| *"Turn these notes into a meeting agenda"*, *"Make this email more polite"* | Rewrites, summarises, proofreads, builds checklists and agendas |
+
+How it does that:
+- **Sorting things out.** The system prompt follows a colleague-style playbook: acknowledge the problem; ground the answer in company policy (`search_knowledge`, cited); give numbered steps with deadlines and what to prepare; route to the right team (`find_team`) with an escalation path; offer a draft. Sensitive situations (harassment, health, legal) get a brief, kind answer pointing to the right confidential channel.
+- **Drafting.** Emails come back in a structured ```email block (To / Cc / Subject / body) that the UI renders as a card. Recipients are only ever addresses the user gave or the directory returned, never invented; unknown details become `[placeholders]`. "Open in email app" uses `mailto:`, which only pre-fills your own mail client; nothing is sent until you press Send there.
+- **Who handles what.** Admins describe each team's responsibilities in the Organization panel (e.g. *IT Support: laptops, accounts, passwords*). `find_team` uses that, plus team membership, to route questions to real contacts.
+- **Personal context.** The buddy knows who it's talking to (email and teams, from the login session) so it can apply the right team's process.
 
 ## Features
 
@@ -138,17 +159,18 @@ The policy is compiled into a Qdrant filter, a Prisma `where` and a plain predic
 
 Rules for sharing: non-admins can only share with groups they belong to, so nobody can push content (or prompt injections) into another team's knowledge base. Readers can't change, re-index or delete documents they don't own. Users without read access get `404` rather than `403`, so they can't tell the document exists.
 
-**Try it:** `npm run seed:demo` creates a demo company (CEO, CFO, HR, engineer, intern) with classified documents (password `demo-password` for every account):
-1. As `intern@demo.local`, ask *"What is the CEO salary?"* and get a playful no.
-2. As `hr@demo.local`, ask the same and get the answer with a Confidential source.
-3. As `engineer@demo.local`, ask *"What do new hires get on day one?"*, then click **Ask for access**.
-4. Approve the request as `hr@demo.local`.
+**Try it:** `npm run seed:demo` creates a demo company (CEO, CFO, HR, engineer, intern, IT support), with team responsibilities and classified documents. Every account's password is `demo-password`.
+1. As `intern@demo.local`, ask *"My laptop isn't working, what should I do?"* or *"Draft an email to HR asking for annual leave from 2 to 6 March"*.
+2. As `intern@demo.local`, ask *"What is the CEO salary?"* and get a playful no.
+3. As `hr@demo.local`, ask the same and get the answer with a Confidential source.
+4. As `engineer@demo.local`, ask *"What do new hires get on day one?"*, then click **Ask for access**.
+5. Approve the request as `hr@demo.local`.
 
 **Tested by** a 41-case integration matrix: 5 people × 5 documents for retrieval, listing and direct access, checked both through Qdrant alone and through the full path. It also covers attempts to widen access through tool arguments, sharing into foreign groups, revocation via group removal, clearance changes and group deletion, a tampered vector payload, admin-only endpoints and the audit trail. Deliberately breaking either enforcement layer makes the suite fail.
 
 ### "Ah-ah, that's confidential" and asking for access
 
-When a question strongly matches a document the user can't read, LocalMind says so in a friendly way instead of pretending nothing exists, and gives them something to do next:
+When a question strongly matches a document the user can't read, CL Buddy says so in a friendly way instead of pretending nothing exists, and gives them something to do next:
 
 | Situation | Reply | Under the reply |
 |---|---|---|
@@ -167,7 +189,7 @@ Requests can only be raised from a notice the assistant actually showed that use
 
 ### Classification suggestions
 
-After a document is indexed, LocalMind suggests a classification if the content looks more sensitive than the label it was uploaded with. The owner sees *"💡 This looks **Confidential**: mentions salary or compensation figures"* with **Mark Confidential / Keep Internal**.
+After a document is indexed, CL Buddy suggests a classification if the content looks more sensitive than the label it was uploaded with. The owner sees *"💡 This looks **Confidential**: mentions salary or compensation figures"* with **Mark Confidential / Keep Internal**.
 
 - **Rules** (deterministic): private keys, API tokens, passwords, salary/compensation figures, Luhn-valid card numbers, IBANs, SSN-style IDs, medical and HR-case language, M&A discussion, "Confidential"/"Restricted" markings.
 - **Model** (optional, `CLASSIFICATION_SUGGESTIONS=model`): the local chat model returns strict JSON (`format` = JSON schema), validated with Zod.
@@ -204,7 +226,7 @@ All endpoints except `auth/register`, `auth/login` and `health` require `Authori
 | GET | `/api/tools/executions` | Your tool audit log |
 | GET / POST / PATCH | `/api/admin/users`, `/api/admin/users/:id` | People: add, role, clearance, groups (admin) |
 | POST | `/api/documents/:id/suggestion/dismiss` | Keep the current label instead of the suggested one |
-| GET / POST / DELETE | `/api/admin/groups`, `/api/admin/groups/:id` | Groups (admin) |
+| GET / POST / PATCH / DELETE | `/api/admin/groups`, `/api/admin/groups/:id` | Groups and what each team handles (admin) |
 | GET | `/api/admin/audit` | Sharing / permission audit log (admin) |
 | GET | `/api/health` | Dependency health (200 / 503) |
 
@@ -233,6 +255,7 @@ curl -s localhost:4000/api/chat -H "authorization: Bearer $TOKEN" -H "content-ty
 | `calculate` | Fixed binary operations (no `eval`) | everyone |
 | `get_current_time` | Server clock, optional IANA time zone | everyone |
 | `list_documents` | PostgreSQL (predefined query, access-policy scoped) | everyone |
+| `find_team` | PostgreSQL: teams, what they handle, member contacts | everyone |
 | `get_usage_stats` | PostgreSQL aggregates for your account | everyone |
 | `get_system_stats` | Instance-wide PostgreSQL aggregates | **ADMIN** |
 
@@ -296,14 +319,14 @@ Per-question results are written to `apps/api/eval/results/`.
 ```bash
 npm test                      # unit tests (no infrastructure needed)
 npm run infra:up
-npm run test:integration      # real PostgreSQL (localmind_test DB) + real Qdrant + fake Ollama over HTTP
+npm run test:integration      # real PostgreSQL (clbuddy_test DB) + real Qdrant + fake Ollama over HTTP
 npm run typecheck
 
 # End-to-end (browser) — against the running stack with the mock model:
 npm run mock:ollama & ALLOW_REGISTRATION=true RETRIEVAL_SCORE_THRESHOLD=0.05 RESTRICTED_NOTICE_SCORE_THRESHOLD=0.1 npm run dev:api &
-npm run build -w @localmind/web && npm run start -w @localmind/web &
+npm run build -w @clbuddy/web && npm run start -w @clbuddy/web &
 npm run seed:demo             # demo organisation used by the access-control E2E tests
-npm run e2e -w @localmind/web
+npm run e2e -w @clbuddy/web
 ```
 
 - **Unit** — chunking (overlap, page attribution, pathological input), extraction (real PDF/DOCX fixtures), tool registry (validation, RBAC, timeouts, error masking), orchestrator loop (citations, round limits, per-round caps, hallucinated tools, history, streaming order), Ollama client (NDJSON split across TCP packets, retries, timeouts, aborts), config, auth crypto.
@@ -312,7 +335,7 @@ npm run e2e -w @localmind/web
 - **Access control** — the matrix described above, plus unit tests of the policy.
 - **E2E (Playwright)** — intern vs. HR asking for the CEO's salary, readers unable to manage others' documents, the admin panel, editing a document's access, sign-up, multi-file upload, cited RAG answer with citation highlighting, calculator tool, history restore after reload, backend-failure banner, switching chats mid-stream, unsupported uploads, and a mobile layout check.
 
-The integration suite uses a separate `localmind_test` database (created automatically by `infrastructure/postgres/init.sql`) and a throw-away Qdrant collection per run. It is skipped with a warning if the infrastructure isn't running.
+The integration suite uses a separate `clbuddy_test` database (created automatically by `infrastructure/postgres/init.sql`) and a throw-away Qdrant collection per run. It is skipped with a warning if the infrastructure isn't running.
 
 ## Configuration
 
@@ -336,7 +359,7 @@ All settings are environment variables validated at startup (see [`.env.example`
 ## Project structure
 
 ```
-localmind-ai/
+cl-buddy/
 ├── apps/
 │   ├── api/
 │   │   ├── src/

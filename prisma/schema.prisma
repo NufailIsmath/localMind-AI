@@ -1,4 +1,4 @@
-// LocalMind AI relational data model.
+// CL Buddy relational data model.
 //
 // PostgreSQL is the system of record for users, documents, conversations and
 // the tool audit trail. Chunk *content* and embeddings live in Qdrant; the
@@ -183,7 +183,7 @@ model Message {
   conversationId String      @db.Uuid
   role           MessageRole
   content        String
-  /// Citations attached to an assistant answer (Source[] from @localmind/shared)
+  /// Citations attached to an assistant answer (Source[] from @clbuddy/shared)
   sources        Json?
   /// Restricted-content notices (server-side; includes document ids never sent to clients)
   restricted     Json?

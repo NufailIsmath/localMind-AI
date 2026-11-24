@@ -9,8 +9,8 @@ import { defineConfig, devices } from "@playwright/test";
  *   ALLOW_REGISTRATION=true RETRIEVAL_SCORE_THRESHOLD=0.05 RESTRICTED_NOTICE_SCORE_THRESHOLD=0.1 npm run dev:api   # terminal 2 (the mock's toy
  *                              # embeddings score lower than a real model)
  *   npm run seed:demo          # demo organisation for access.spec.ts
- *   npm run build -w @localmind/web && npm run start -w @localmind/web   # terminal 3
- *   npm run e2e -w @localmind/web
+ *   npm run build -w @clbuddy/web && npm run start -w @clbuddy/web   # terminal 3
+ *   npm run e2e -w @clbuddy/web
  */
 export default defineConfig({
   testDir: "e2e",

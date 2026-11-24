@@ -1,6 +1,6 @@
 "use client";
 
-import type { Classification, DocumentVisibility, GroupRefDto } from "@localmind/shared";
+import type { Classification, DocumentVisibility, GroupRefDto } from "@clbuddy/shared";
 import { CLASSIFICATION_LABELS } from "@/lib/format";
 
 export function ClassificationBadge({ value }: { value: Classification }) {

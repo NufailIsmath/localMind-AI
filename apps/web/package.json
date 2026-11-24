@@ -1,5 +1,5 @@
 {
-  "name": "@localmind/web",
+  "name": "@clbuddy/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,7 +10,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@localmind/shared": "0.1.0",
+    "@clbuddy/shared": "0.1.0",
     "next": "16.4.6",
     "react": "19.3.1",
     "react-dom": "19.3.1"

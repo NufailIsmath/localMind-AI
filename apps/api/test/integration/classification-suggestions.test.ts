@@ -1,4 +1,4 @@
-import type { DocumentDto } from "@localmind/shared";
+import type { DocumentDto } from "@clbuddy/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auth, createHarness, infraReady, type Harness } from "./harness.js";
 

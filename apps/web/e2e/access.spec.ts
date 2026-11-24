@@ -10,7 +10,7 @@ async function signIn(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("demo-password");
   await page.getByRole("button", { name: "Sign in" }).last().click();
-  await expect(page.getByText("How can I help?")).toBeVisible();
+  await expect(page.getByText("What can I help you sort out today?")).toBeVisible();
 }
 
 const SHOTS = process.env.E2E_SCREENSHOTS;

@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { MultipartFile } from "@fastify/multipart";
 import { z } from "zod";
-import type { DocumentDto } from "@localmind/shared";
+import type { DocumentDto } from "@clbuddy/shared";
 import { AppError, badRequest } from "../../lib/errors.js";
 import { UuidParam, parse } from "../../lib/validation.js";
 import { CLASSIFICATIONS, VISIBILITIES, classificationLevel, type AccessPrincipal } from "../access/access.policy.js";

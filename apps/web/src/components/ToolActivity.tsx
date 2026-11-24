@@ -1,6 +1,6 @@
 "use client";
 
-import type { ToolExecutionSummary } from "@localmind/shared";
+import type { ToolExecutionSummary } from "@clbuddy/shared";
 import { TOOL_LABELS } from "@/lib/format";
 
 export interface PendingTool {

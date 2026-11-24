@@ -1,4 +1,4 @@
-import type { ChatResponse, DocumentDto, GroupDto } from "@localmind/shared";
+import type { ChatResponse, DocumentDto, GroupDto } from "@clbuddy/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { auth, createHarness, infraReady, type Harness } from "./harness.js";
 
@@ -102,7 +102,7 @@ describe.runIf(infraReady)("security", () => {
 
     it("has no tools with side effects to abuse", () => {
       expect(h.app.services.tools.list("ADMIN").map((t) => t.name).sort()).toEqual(
-        ["calculate", "get_current_time", "get_system_stats", "get_usage_stats", "list_documents", "search_knowledge"].sort(),
+        ["calculate", "find_team", "get_current_time", "get_system_stats", "get_usage_stats", "list_documents", "search_knowledge"].sort(),
       );
     });
   });

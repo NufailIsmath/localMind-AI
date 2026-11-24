@@ -1,6 +1,6 @@
 "use client";
 
-import type { HealthDto } from "@localmind/shared";
+import type { HealthDto } from "@clbuddy/shared";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 

@@ -1,10 +1,10 @@
 # Security
 
-This document describes LocalMind's threat model, the controls that address it, how they're tested, and the results of the most recent security assessment.
+This document describes CL Buddy's threat model, the controls that address it, how they're tested, and the results of the most recent security assessment.
 
 ## Threat model
 
-LocalMind is a multi-user assistant over shared company documents. The main adversaries:
+CL Buddy is a multi-user assistant over shared company documents. The main adversaries:
 
 | Adversary | Goal |
 |---|---|

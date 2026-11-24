@@ -6,7 +6,7 @@ const dev = process.env.NODE_ENV !== "production";
 /**
  * Content-Security-Policy: even if something slipped past React's escaping,
  * the page can't load third-party scripts or images, post forms elsewhere,
- * or send data anywhere except the LocalMind API.
+ * or send data anywhere except the CL Buddy API.
  */
 const csp = [
   "default-src 'self'",

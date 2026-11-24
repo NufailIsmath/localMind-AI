@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Source } from "@localmind/shared";
+import type { Source } from "@clbuddy/shared";
 import type { ChatRepository, HistoryMessage, ToolExecutionRecord } from "../../src/modules/chat/chat.repository.js";
 import { notFound } from "../../src/lib/errors.js";
 

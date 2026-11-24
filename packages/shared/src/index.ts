@@ -1,5 +1,5 @@
 /**
- * API contract shared by `@localmind/api` and `@localmind/web`.
+ * API contract shared by `@clbuddy/api` and `@clbuddy/web`.
  * Keep this file free of runtime dependencies.
  */
 

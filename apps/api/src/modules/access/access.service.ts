@@ -369,6 +369,16 @@ export class AccessService {
     }
   }
 
+  /** Sets what a team handles (shown to everyone via the buddy's find_team tool). */
+  async updateGroup(actor: AccessPrincipal, groupId: string, description: string | null) {
+    const g = await this.prisma.group.update({ where: { id: groupId }, data: { description } }).catch((err) => {
+      if ((err as { code?: string }).code === "P2025") throw notFound("Group not found");
+      throw err;
+    });
+    await this.audit(actor.userId, "group.updated", "group", groupId, { name: g.name, description });
+    return (await this.listGroups()).find((x) => x.id === groupId)!;
+  }
+
   /** Deleting a group revokes the access it granted; affected vectors are re-synced. */
   async deleteGroup(actor: AccessPrincipal, groupId: string) {
     const group = await this.prisma.group.findUnique({ where: { id: groupId }, include: { documents: { select: { documentId: true } } } });

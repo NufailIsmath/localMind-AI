@@ -5,6 +5,7 @@ import { calculatorTool } from "./tools/calculator.tool.js";
 import { listDocumentsTool, systemStatsTool, usageStatsTool } from "./tools/database.tools.js";
 import { searchKnowledgeTool } from "./tools/search-knowledge.tool.js";
 import { getCurrentTimeTool } from "./tools/time.tool.js";
+import { findTeamTool } from "./tools/team.tool.js";
 
 export function createToolRegistry(deps: {
   prisma: PrismaClient;
@@ -15,6 +16,7 @@ export function createToolRegistry(deps: {
 }): ToolRegistry {
   return new ToolRegistry(deps.timeoutMs, deps.onUnexpectedError)
     .register(searchKnowledgeTool(deps.retrieval, 10, deps.acknowledgeRestricted ?? true))
+    .register(findTeamTool(deps.prisma))
     .register(getCurrentTimeTool())
     .register(calculatorTool)
     .register(listDocumentsTool(deps.prisma))

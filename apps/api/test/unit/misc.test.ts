@@ -45,6 +45,20 @@ describe("prompt helpers", () => {
     expect(p).toMatch(/untrusted DATA/);
     expect(p).toContain("2026-01-02");
   });
+  it("sets up CL Buddy as a work buddy, with the user's context and the email draft format", () => {
+    const p = buildSystemPrompt({
+      tools: [{ name: "search_knowledge", description: "", parameters: {} }, { name: "find_team", description: "", parameters: {} }],
+      user: { email: "sam@corp.test", teams: ["Engineering"] },
+    });
+    expect(p).toContain("You are CL Buddy, a friendly work buddy");
+    expect(p).toContain("sam@corp.test, who is in Engineering");
+    expect(p).toMatch(/numbered steps/);
+    expect(p).toContain("```email");
+    expect(p).toMatch(/Never invent people or addresses/);
+    expect(p).toMatch(/emergency services/);
+    expect(p).not.toMatch(/\n\n\n/);
+  });
+
   it("serialises and clips tool results", () => {
     expect(JSON.parse(formatToolResult("t", { status: "DENIED", error: "no", durationMs: 1 }))).toEqual({ tool: "t", status: "denied", error: "no" });
     const big = formatToolResult("t", { status: "SUCCESS", output: "x".repeat(50_000), durationMs: 1 });

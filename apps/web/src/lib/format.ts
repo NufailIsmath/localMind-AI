@@ -20,6 +20,7 @@ export function relativeTime(iso: string): string {
 export const TOOL_LABELS: Record<string, string> = {
   search_knowledge: "Searched documents",
   calculate: "Calculated",
+  find_team: "Looked up who handles it",
   get_current_time: "Checked the time",
   list_documents: "Listed documents",
   get_usage_stats: "Read usage stats",

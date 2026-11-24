@@ -1,18 +1,19 @@
 "use client";
 
-import type { ChatStreamEvent, MessageDto, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@localmind/shared";
+import type { ChatStreamEvent, MessageDto, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@clbuddy/shared";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, ApiError, streamChat } from "@/lib/api";
 import { Markdown } from "./Markdown";
 import { RestrictedCard } from "./RestrictedCard";
+import { CopyButton } from "./DraftCard";
 import { Sources } from "./Sources";
 import { ToolActivity, type PendingTool } from "./ToolActivity";
 
 const EXAMPLES = [
-  "What does my handbook say about annual leave?",
-  "What is 1,250 multiplied by 12?",
-  "Which documents have I uploaded?",
-  "What's the date today?",
+  "My laptop isn't working, what should I do?",
+  "How do I claim back expenses?",
+  "Draft an email to HR asking for annual leave from 2 to 6 March",
+  "What does the handbook say about working from home?",
 ];
 
 interface Draft {
@@ -55,6 +56,9 @@ function AssistantMessage({
         />
       ))}
       <Sources sources={message.sources} highlighted={highlighted} idPrefix={message.id} />
+      <div className="msg-actions">
+        <CopyButton text={message.content.replace(/\s?\[S\d+\]/g, "")} label="Copy answer" />
+      </div>
     </article>
   );
 }
@@ -215,8 +219,8 @@ export function ChatView({
         {loading && <p className="muted center">Loading conversation…</p>}
         {!loading && messages.length === 0 && !draft && (
           <div className="empty">
-            <h2>How can I help?</h2>
-            <p className="muted">Ask about your uploaded documents, or try one of these:</p>
+            <h2>Hey! What can I help you sort out today? 👋</h2>
+            <p className="muted">Ask me about company policies, get step-by-step help with a work issue, or have me draft an email.</p>
             <div className="examples">
               {EXAMPLES.map((ex) => (
                 <button key={ex} type="button" onClick={() => void send(ex)}>
@@ -281,7 +285,7 @@ export function ChatView({
       >
         <textarea
           aria-label="Message"
-          placeholder="Ask LocalMind…  (Enter to send, Shift+Enter for a new line)"
+          placeholder="Ask CL Buddy…  (Enter to send, Shift+Enter for a new line)"
           value={input}
           rows={1}
           maxLength={8000}

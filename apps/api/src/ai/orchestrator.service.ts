@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ChatResponse, ChatStreamEvent, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@localmind/shared";
+import type { ChatResponse, ChatStreamEvent, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@clbuddy/shared";
 import type { StoredNotice } from "../modules/access/access-requests.service.js";
 import type { ChatRepository } from "../modules/chat/chat.repository.js";
 import type { ToolRegistry } from "../modules/tools/tool.registry.js";
@@ -30,6 +30,8 @@ export interface OrchestratorLogger {
 export interface ChatTurnInput {
   /** The authenticated user — identity, role, clearance and groups. */
   user: AccessPrincipal;
+  /** Display context for the system prompt (email, team names). */
+  profile?: { email: string; teams: string[] };
   conversationId?: string;
   message: string;
   signal?: AbortSignal;
@@ -169,7 +171,7 @@ export class Orchestrator {
 
     const toolSpecs = this.tools.specs(user.role);
     const messages: ChatMessage[] = [
-      { role: "system", content: buildSystemPrompt({ tools: toolSpecs }) },
+      { role: "system", content: buildSystemPrompt({ tools: toolSpecs, user: input.profile }) },
       ...history.map(
         (h): ChatMessage =>
           h.role === "USER" ? { role: "user", content: h.content } : { role: "assistant", content: stripCitations(h.content) },

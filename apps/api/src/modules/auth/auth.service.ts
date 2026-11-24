@@ -1,5 +1,5 @@
 import type { Classification, PrismaClient, User } from "@prisma/client";
-import type { UserDto } from "@localmind/shared";
+import type { UserDto } from "@clbuddy/shared";
 import { AppError, conflict, forbidden } from "../../lib/errors.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import type { UserProfile } from "../access/access.service.js";

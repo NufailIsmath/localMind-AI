@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import type { ToolExecutionSummary, ToolInfoDto } from "@localmind/shared";
+import type { ToolExecutionSummary, ToolInfoDto } from "@clbuddy/shared";
 import { parse } from "../../lib/validation.js";
 import { toParametersSchema } from "./tool.registry.js";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import type { RestrictedNoticeDto } from "@localmind/shared";
+import type { RestrictedNoticeDto } from "@clbuddy/shared";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { CLASSIFICATION_LABELS } from "@/lib/format";

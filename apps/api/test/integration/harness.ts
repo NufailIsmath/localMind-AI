@@ -3,13 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
-import type { AuthResponse, DocumentDto } from "@localmind/shared";
+import type { AuthResponse, DocumentDto } from "@clbuddy/shared";
 import { buildApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config/env.js";
 import { startFakeOllama, type FakeOllama } from "../helpers/fake-ollama-server.js";
 import { TEST_DATABASE_URL, TEST_QDRANT_URL } from "./global-setup.js";
 
-export const infraReady = process.env.LOCALMIND_INTEGRATION_READY === "1";
+export const infraReady = process.env.CLBUDDY_INTEGRATION_READY === "1";
 
 export interface Harness {
   app: FastifyInstance;
@@ -23,7 +23,7 @@ export interface Harness {
 
 export async function createHarness(env: Record<string, string> = {}, { reset = true } = {}): Promise<Harness> {
   const fake = await startFakeOllama();
-  const uploadDir = await mkdtemp(join(tmpdir(), "localmind-test-"));
+  const uploadDir = await mkdtemp(join(tmpdir(), "clbuddy-test-"));
   const collection = `test_${randomUUID().replace(/-/g, "")}`;
   const config = loadConfig({
     NODE_ENV: "test",
@@ -58,7 +58,7 @@ export async function createHarness(env: Record<string, string> = {}, { reset = 
       return res.json<AuthResponse>();
     },
     async upload(token, filename, content, fields = {}) {
-      const boundary = `----localmind${randomUUID()}`;
+      const boundary = `----clbuddy${randomUUID()}`;
       const bytes = typeof content === "string" ? Buffer.from(content) : content;
       const fieldParts = Object.entries(fields).map(([k, v]) =>
         Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`),

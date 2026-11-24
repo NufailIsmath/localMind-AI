@@ -1,6 +1,6 @@
 "use client";
 
-import type { AuthResponse, ConversationSummaryDto, UserDto } from "@localmind/shared";
+import type { AuthResponse, ConversationSummaryDto, UserDto } from "@clbuddy/shared";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, tokenStore } from "@/lib/api";
 import { AuthForm } from "./AuthForm";
@@ -78,7 +78,7 @@ export function Workspace() {
     }
   }
 
-  if (!ready) return <div className="splash">LocalMind</div>;
+  if (!ready) return <div className="splash">CL Buddy</div>;
   if (!token || !user) return <AuthForm onAuthenticated={onAuthenticated} />;
 
   return (
@@ -88,7 +88,7 @@ export function Workspace() {
           <span className="brand-mark" aria-hidden>
             ◆
           </span>
-          LocalMind
+          CL Buddy
         </div>
         <HealthBadge token={token} />
         <nav className="mobile-tabs" aria-label="Panels">

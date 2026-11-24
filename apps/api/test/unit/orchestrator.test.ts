@@ -1,4 +1,4 @@
-import type { ChatStreamEvent } from "@localmind/shared";
+import type { ChatStreamEvent } from "@clbuddy/shared";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { Orchestrator, type OrchestratorOptions } from "../../src/ai/orchestrator.service.js";

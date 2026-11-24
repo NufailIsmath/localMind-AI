@@ -1,6 +1,6 @@
 "use client";
 
-import { CLASSIFICATIONS, type DocumentAccessRequest, type DocumentVisibility, type GroupRefDto } from "@localmind/shared";
+import { CLASSIFICATIONS, type DocumentAccessRequest, type DocumentVisibility, type GroupRefDto } from "@clbuddy/shared";
 import { CLASSIFICATION_LABELS, VISIBILITY_LABELS } from "@/lib/format";
 
 /** Visibility / classification / groups controls, used for uploads and for editing access. */

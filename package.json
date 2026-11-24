@@ -1,5 +1,5 @@
 {
-  "name": "localmind-ai",
+  "name": "cl-buddy",
   "version": "0.1.0",
   "private": true,
   "description": "A local-first AI assistant with RAG and tool calling (Ollama + Qdrant + PostgreSQL).",
@@ -14,22 +14,22 @@
     "schema": "prisma/schema.prisma"
   },
   "scripts": {
-    "build": "npm run build -w @localmind/shared && npm run build -w @localmind/api && npm run build -w @localmind/web",
-    "dev:api": "npm run dev -w @localmind/api",
-    "dev:web": "npm run dev -w @localmind/web",
-    "typecheck": "npm run build -w @localmind/shared && npm run typecheck -w @localmind/api && npm run typecheck -w @localmind/web",
-    "test": "npm run test -w @localmind/api",
-    "test:integration": "npm run test:integration -w @localmind/api",
-    "eval:rag": "npm run eval:rag -w @localmind/api",
+    "build": "npm run build -w @clbuddy/shared && npm run build -w @clbuddy/api && npm run build -w @clbuddy/web",
+    "dev:api": "npm run dev -w @clbuddy/api",
+    "dev:web": "npm run dev -w @clbuddy/web",
+    "typecheck": "npm run build -w @clbuddy/shared && npm run typecheck -w @clbuddy/api && npm run typecheck -w @clbuddy/web",
+    "test": "npm run test -w @clbuddy/api",
+    "test:integration": "npm run test:integration -w @clbuddy/api",
+    "eval:rag": "npm run eval:rag -w @clbuddy/api",
     "infra:up": "docker compose -f infrastructure/docker-compose.yml up -d",
     "infra:down": "docker compose -f infrastructure/docker-compose.yml down",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate",
-    "mock:ollama": "npm run mock:ollama -w @localmind/api",
-    "test:all": "npm run test:all -w @localmind/api",
-    "seed:demo": "npm run seed:demo -w @localmind/api"
+    "mock:ollama": "npm run mock:ollama -w @clbuddy/api",
+    "test:all": "npm run test:all -w @clbuddy/api",
+    "seed:demo": "npm run seed:demo -w @clbuddy/api"
   },
   "devDependencies": {
     "prisma": "6.19.3",

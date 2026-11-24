@@ -1,4 +1,4 @@
-import type { DocumentDto } from "@localmind/shared";
+import type { DocumentDto } from "@clbuddy/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeDocx, makePdf } from "../helpers/fixtures.js";
 import { principal } from "../helpers/access.js";

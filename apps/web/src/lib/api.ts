@@ -14,10 +14,10 @@ import type {
   HealthDto,
   ToolInfoDto,
   UserDto,
-} from "@localmind/shared";
+} from "@clbuddy/shared";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/+$/, "");
-const TOKEN_KEY = "localmind.token";
+const TOKEN_KEY = "clbuddy.token";
 
 export const tokenStore = {
   get(): string | null {
@@ -62,7 +62,7 @@ async function request<T>(path: string, init: { method?: string; token?: string 
       body: init.form ?? (init.json !== undefined ? JSON.stringify(init.json) : undefined),
     });
   } catch {
-    throw new ApiError(0, "NETWORK", `Cannot reach the LocalMind API at ${API_URL}. Is it running?`);
+    throw new ApiError(0, "NETWORK", `Cannot reach the CL Buddy API at ${API_URL}. Is it running?`);
   }
   if (res.status === 204) return undefined as T;
   const body = (await res.json().catch(() => ({}))) as T & Partial<ApiErrorBody>;
@@ -117,6 +117,8 @@ export const api = {
     groups: (token: string) => request<GroupDto[]>("/api/admin/groups", { token }),
     createGroup: (token: string, name: string, description?: string) =>
       request<GroupDto>("/api/admin/groups", { method: "POST", token, json: { name, description } }),
+    updateGroup: (token: string, id: string, description: string | null) =>
+      request<GroupDto>(`/api/admin/groups/${id}`, { method: "PATCH", token, json: { description } }),
     deleteGroup: (token: string, id: string) => request<void>(`/api/admin/groups/${id}`, { method: "DELETE", token }),
     audit: (token: string) => request<AuditEventDto[]>("/api/admin/audit?limit=100", { token }),
   },
@@ -143,7 +145,7 @@ export async function streamChat(
     });
   } catch (err) {
     if (signal?.aborted) return;
-    throw new ApiError(0, "NETWORK", `Cannot reach the LocalMind API at ${API_URL}.`);
+    throw new ApiError(0, "NETWORK", `Cannot reach the CL Buddy API at ${API_URL}.`);
   }
   if (!res.ok || !res.body) {
     const err = (await res.json().catch(() => ({}))) as Partial<ApiErrorBody>;
