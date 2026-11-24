@@ -14,7 +14,7 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 | **LLM runtime** | [Ollama](https://ollama.com) — `qwen3:8b` (chat + tool calling), `nomic-embed-text` (embeddings) |
 | **Backend** | Node.js · TypeScript · Fastify · Zod · Prisma |
 | **Data** | Qdrant (vectors) · PostgreSQL (users, documents, chats, tool audit log) |
-| **Frontend** | Next.js 16 · React 19 (streaming chat UI) |
+| **Frontend** | Next.js 16 · React 19 (streaming chat UI), themed to match [codinglegends.io](https://www.codinglegends.io): brand blue `#3A7CC4`, sky/cyan gradient `#78D4E4 → #58BCF8`, black pill buttons; light and dark mode |
 | **Testing** | Vitest — 102 unit + 118 integration tests (real Postgres/Qdrant), 13 Playwright E2E, security suite, RAG evaluation harness |
 | **Infra** | Docker Compose |
 
@@ -323,7 +323,7 @@ npm run test:integration      # real PostgreSQL (clbuddy_test DB) + real Qdrant 
 npm run typecheck
 
 # End-to-end (browser) — against the running stack with the mock model:
-npm run mock:ollama & ALLOW_REGISTRATION=true RETRIEVAL_SCORE_THRESHOLD=0.05 RESTRICTED_NOTICE_SCORE_THRESHOLD=0.1 npm run dev:api &
+npm run mock:ollama & RATE_LIMIT_ENABLED=false ALLOW_REGISTRATION=true RETRIEVAL_SCORE_THRESHOLD=0.05 RESTRICTED_NOTICE_SCORE_THRESHOLD=0.1 npm run dev:api &
 npm run build -w @clbuddy/web && npm run start -w @clbuddy/web &
 npm run seed:demo             # demo organisation used by the access-control E2E tests
 npm run e2e -w @clbuddy/web

@@ -1,19 +1,30 @@
 :root {
-  --bg: #f7f7f5;
+  /* CL Buddy palette — matched to codinglegends.io (sampled from the site). */
+  --primary: #3a7cc4; /* brand blue (ribbons, badges, "to last") — graphics & large text */
+  --secondary: #58bcf8; /* bright sky blue (logo) */
+  --secondary-2: #78d4e4; /* cyan (logo gradient start) */
+  --brand-gradient: linear-gradient(135deg, var(--secondary-2) 0%, var(--secondary) 100%);
+  --ink: #0a0a0a; /* near-black primary buttons & headlines */
+  --ink-text: #ffffff;
+
+  --bg: #eef6f9;
+  --bg-gradient: linear-gradient(180deg, #ecf4f8 0%, #dceef6 100%);
+  --hero-gradient: linear-gradient(180deg, #ecf4f8 0%, #b4dcec 55%, #86c8e8 100%);
   --surface: #ffffff;
-  --surface-2: #f0f0ed;
-  --border: #e3e3de;
-  --text: #1c1d1f;
-  --muted: #6b6d72;
-  --accent: #2f6f5e;
+  --surface-2: #f2f8fb;
+  --border: #d7e7ef;
+  --text: #0a0a0a;
+  --muted: #50505a;
+  /* Text-level blue: one step deeper than --primary so small text passes WCAG AA (5.3:1 on white). */
+  --accent: #2f6db3;
   --accent-text: #ffffff;
-  --accent-soft: #e3efe9;
+  --accent-soft: #e0f0f8;
   --danger: #b4372f;
   --danger-soft: #fbe9e7;
   --warn: #9a6a00;
   --warn-soft: #fbf1d9;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 2px 8px rgb(0 0 0 / 0.04);
+  --radius: 14px;
+  --shadow: 0 1px 2px rgb(16 60 90 / 0.05), 0 4px 14px rgb(16 60 90 / 0.06);
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
@@ -21,19 +32,28 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111214;
-    --surface: #18191c;
-    --surface-2: #202226;
-    --border: #2c2e33;
-    --text: #e8e8e6;
-    --muted: #9a9ca1;
-    --accent: #5fb39a;
-    --accent-text: #0d1512;
-    --accent-soft: #1d2d28;
+    --primary: #58bcf8;
+    --secondary: #58bcf8;
+    --secondary-2: #78d4e4;
+    --ink: #f5f8fa; /* inverted: light pill buttons on dark, like the site's white button */
+    --ink-text: #0a0a0a;
+
+    --bg: #0b1218;
+    --bg-gradient: linear-gradient(180deg, #0b1218 0%, #0e1a24 100%);
+    --hero-gradient: linear-gradient(180deg, #0b1218 0%, #0f2232 60%, #133048 100%);
+    --surface: #111a22;
+    --surface-2: #17222c;
+    --border: #22313d;
+    --text: #e8eef2;
+    --muted: #9aa7b2;
+    --accent: #58bcf8;
+    --accent-text: #0a0a0a;
+    --accent-soft: #13293a;
     --danger: #ef7d73;
     --danger-soft: #3a1f1d;
     --warn: #e2b54f;
     --warn-soft: #362c14;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 14px rgb(0 0 0 / 0.25);
     color-scheme: dark;
   }
 }
@@ -46,7 +66,7 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: var(--bg);
+  background: var(--bg-gradient) fixed, var(--bg);
   color: var(--text);
   font: 15px/1.55 var(--font);
   -webkit-font-smoothing: antialiased;
@@ -69,7 +89,7 @@ button:disabled {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -91,23 +111,31 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* Pill buttons, as on codinglegends.io: black primary ("Start a project"), white secondary ("See our work"). */
 .btn-primary,
 .btn-secondary {
-  border-radius: 8px;
-  padding: 9px 16px;
+  border-radius: 999px;
+  padding: 9px 18px;
   font-weight: 600;
   border: 1px solid transparent;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
 }
 .btn-primary {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--ink);
+  color: var(--ink-text);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
 }
 .btn-primary:hover:not(:disabled) {
-  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.22);
 }
 .btn-secondary {
-  background: var(--surface-2);
+  background: var(--surface);
   border-color: var(--border);
+  box-shadow: var(--shadow);
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--primary);
 }
 
 .link {
@@ -145,13 +173,20 @@ button:disabled {
 /* ---------- Brand ---------- */
 .brand {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: 6px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
+/* "CL" wordmark in the logo's cyan → sky gradient. */
 .brand-mark {
-  color: var(--accent);
+  font-weight: 800;
+  font-size: 1.25em;
+  letter-spacing: -0.04em;
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .brand-lg {
   font-size: 26px;
@@ -163,6 +198,7 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 24px 16px;
+  background: var(--hero-gradient);
 }
 .auth-card {
   width: 100%;
@@ -235,7 +271,8 @@ button:disabled {
   gap: 16px;
   padding: 0 16px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
 }
 
 .health {

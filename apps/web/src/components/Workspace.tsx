@@ -85,10 +85,7 @@ export function Workspace() {
     <div className="app" data-panel={panel}>
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden>
-            ◆
-          </span>
-          CL Buddy
+          <span className="brand-mark">CL</span> Buddy
         </div>
         <HealthBadge token={token} />
         <nav className="mobile-tabs" aria-label="Panels">

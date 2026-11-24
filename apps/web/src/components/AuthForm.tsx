@@ -33,12 +33,9 @@ export function AuthForm({ onAuthenticated }: { onAuthenticated: (auth: AuthResp
     <main className="auth">
       <div className="auth-card">
         <div className="brand brand-lg">
-          <span className="brand-mark" aria-hidden>
-            ◆
-          </span>
-          CL Buddy
+          <span className="brand-mark">CL</span> Buddy
         </div>
-        <p className="muted">A private AI assistant that runs on your machine. Your documents never leave it.</p>
+        <p className="muted">Your work buddy: answers from company docs, help sorting out work issues, and email drafts. Runs privately on your own machines.</p>
 
         <div className="tabs" role="tablist">
           <button role="tab" aria-selected={mode === "login"} className={mode === "login" ? "active" : ""} onClick={() => setMode("login")} type="button">
