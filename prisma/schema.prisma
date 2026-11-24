@@ -334,6 +334,8 @@ model LeaveEntry {
   decisionNote String?
   /// "messageId:actionId" of the chat card the request was submitted from
   actionRef    String?
+  /// The id the external HR system gave this leave (set after the first sync)
+  externalId   String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -346,4 +348,28 @@ model CompanyHoliday {
   id   String   @id @default(uuid()) @db.Uuid
   date DateTime @unique @db.Date
   name String
+}
+
+enum HrSyncStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+/// Outbox of leave changes to push to the external HR leave system. Written in
+/// the same transaction as the change; delivered in order, with retries.
+model HrSyncEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  entryId       String       @db.Uuid
+  eventType     String
+  payload       Json
+  status        HrSyncStatus @default(PENDING)
+  attempts      Int          @default(0)
+  lastError     String?
+  nextAttemptAt DateTime     @default(now())
+  sentAt        DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([status, nextAttemptAt])
+  @@index([entryId, createdAt])
 }

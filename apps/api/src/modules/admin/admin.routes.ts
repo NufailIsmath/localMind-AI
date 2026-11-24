@@ -81,6 +81,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(204).send();
   });
 
+  // ----- external HR leave system sync -----
+  app.get("/integrations/hr", async () => app.services.hrSync.status());
+
+  app.post("/integrations/hr/sync", async () => ({ delivered: await app.services.hrSync.processDue() }));
+
+  app.post("/integrations/hr/events/:id/retry", async (req, reply) => {
+    const { id } = parse(UuidParam, req.params);
+    if (!(await app.services.hrSync.retry(id))) return reply.code(404).send({ error: "NOT_FOUND", message: "No failed event with that id" });
+    await access.audit(req.principal.userId, "integration.hr.retry", "hr_sync_event", id, {});
+    return reply.code(204).send();
+  });
+
   app.get("/audit", async (req): Promise<AuditEventDto[]> => {
     const { limit } = parse(z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }), req.query);
     return access.listAudit(limit);

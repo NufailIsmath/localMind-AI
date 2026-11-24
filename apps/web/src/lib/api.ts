@@ -148,6 +148,16 @@ export const api = {
     updateGroup: (token: string, id: string, description: string | null) =>
       request<GroupDto>(`/api/admin/groups/${id}`, { method: "PATCH", token, json: { description } }),
     deleteGroup: (token: string, id: string) => request<void>(`/api/admin/groups/${id}`, { method: "DELETE", token }),
+    hrSync: (token: string) =>
+      request<{
+        enabled: boolean;
+        baseUrl: string;
+        counts: Partial<Record<"PENDING" | "SENT" | "FAILED", number>>;
+        lastSentAt: string | null;
+        failures: { id: string; eventType: string; attempts: number; lastError: string | null; createdAt: string; employeeEmail: string | null }[];
+      }>("/api/admin/integrations/hr", { token }),
+    hrSyncNow: (token: string) => request<{ delivered: number }>("/api/admin/integrations/hr/sync", { method: "POST", token }),
+    hrRetry: (token: string, id: string) => request<void>(`/api/admin/integrations/hr/events/${id}/retry`, { method: "POST", token }),
     audit: (token: string) => request<AuditEventDto[]>("/api/admin/audit?limit=100", { token }),
   },
   tools: (token: string) => request<ToolInfoDto[]>("/api/tools", { token }),

@@ -126,7 +126,9 @@ export async function buildApp(config: AppConfig, opts: BuildAppOptions = {}): P
   await app.register(accessRequestRoutes, { prefix: "/api/access-requests" });
   await app.register(leaveRoutes, { prefix: "/api/leave" });
 
+  app.addHook("onReady", async () => services.hrSync.start());
   app.addHook("onClose", async () => {
+    await services.hrSync.stop();
     await services.ingestion.onIdle();
     await services.prisma.$disconnect();
   });

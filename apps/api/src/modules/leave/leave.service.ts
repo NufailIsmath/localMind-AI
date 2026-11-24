@@ -4,6 +4,7 @@ import { AppError, badRequest, forbidden, notFound } from "../../lib/errors.js";
 import type { AccessPrincipal } from "../access/access.policy.js";
 import type { AccessService } from "../access/access.service.js";
 import { parseCsv } from "./csv.js";
+import type { HrSyncService } from "../integrations/hr/hr-sync.service.js";
 import {
   computeBalance,
   days,
@@ -109,6 +110,8 @@ export class LeaveService {
     private readonly source: LeaveDataSource,
     private readonly access: AccessService,
     private readonly opts: LeaveOptions,
+    /** Pushes changes to the external HR leave system (no-op when disabled). */
+    private readonly hrSync?: HrSyncService,
   ) {
     this.today = opts.today ?? (() => toISODate(new Date()));
   }
@@ -227,6 +230,7 @@ export class LeaveService {
           actionRef: input.actionRef ?? null,
         },
       });
+      await this.hrSync?.enqueue(tx, e.id, "leave.request_submitted");
       await this.access.audit(userId, "leave.request.created", "leave", e.id, { startDate: input.startDate, endDate: input.endDate, days: plan.workingDays, leaveType: input.leaveType });
       return this.entryDto(e);
     }, { timeout: 20_000 });
@@ -240,7 +244,11 @@ export class LeaveService {
     if (!(e.status === "PENDING" || (e.status === "APPROVED" && !started))) {
       throw new AppError(409, "CONFLICT", e.status === "APPROVED" ? "Leave that has already started can only be changed by HR" : `This request is already ${e.status.toLowerCase()}`);
     }
-    const updated = await this.prisma.leaveEntry.update({ where: { id: entryId }, data: { status: "CANCELLED" } });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.leaveEntry.update({ where: { id: entryId }, data: { status: "CANCELLED" } });
+      await this.hrSync?.enqueue(tx, entryId, e.status === "PENDING" ? "leave.request_withdrawn" : "leave.cancelled");
+      return u;
+    });
     await this.access.audit(userId, e.status === "PENDING" ? "leave.request.withdrawn" : "leave.entry.cancelled_by_owner", "leave", entryId, {
       startDate: toISODate(e.startDate),
       endDate: toISODate(e.endDate),
@@ -301,6 +309,10 @@ export class LeaveService {
       const updated = await tx.leaveEntry.update({
         where: { id: entryId },
         data: { status: approve ? "APPROVED" : "REJECTED", decidedById: p.userId, decidedAt: new Date(), decisionNote: note?.slice(0, 500) || null },
+      });
+      await this.hrSync?.enqueue(tx, entryId, approve ? "leave.request_approved" : "leave.request_rejected", {
+        decisionNote: note?.slice(0, 500) || null,
+        decidedById: p.userId,
       });
       await this.access.audit(p.userId, approve ? "leave.request.approved" : "leave.request.rejected", "leave", entryId, {
         requester: e.userId,
@@ -422,6 +434,7 @@ export class LeaveService {
         createdById: p.userId,
       },
     });
+    await this.hrSync?.enqueue(tx, e.id, "leave.recorded");
     if (source === "MANUAL") await this.access.audit(p.userId, "leave.entry.added", "user", input.userId, { ...input, days: days(effective) });
     return toEntryDto({ id: e.id, leaveType: e.leaveType, startDate: input.startDate, endDate: input.endDate, halfDays: e.halfDays, status: e.status, note: e.note });
   }
@@ -430,7 +443,10 @@ export class LeaveService {
     await this.requireManager(p);
     const e = await this.prisma.leaveEntry.findUnique({ where: { id: entryId } });
     if (!e) throw notFound("Leave entry not found");
-    await this.prisma.leaveEntry.update({ where: { id: entryId }, data: { status: "CANCELLED" } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.leaveEntry.update({ where: { id: entryId }, data: { status: "CANCELLED" } });
+      await this.hrSync?.enqueue(tx, entryId, e.status === "PENDING" ? "leave.request_withdrawn" : "leave.cancelled");
+    });
     await this.access.audit(p.userId, "leave.entry.cancelled", "user", e.userId, { entryId, startDate: toISODate(e.startDate), endDate: toISODate(e.endDate) });
   }
 

@@ -58,6 +58,17 @@ const EnvSchema = z
     /** Minimum similarity before a restricted document is acknowledged (keeps probing imprecise). */
     RESTRICTED_NOTICE_SCORE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
     /** model: rules + local model; rules: pattern rules only; off: no suggestions. */
+    /**
+     * Push leave changes to the company's external HR leave system. OFF by default;
+     * the base URL is a placeholder until the real API details are available.
+     */
+    HR_SYNC_ENABLED: bool.default(false),
+    HR_API_BASE_URL: z.url().default("https://hr-api.example.com/v1"),
+    HR_API_TOKEN: z.string().optional(),
+    HR_API_TIMEOUT_MS: int(10_000, 500),
+    /** How often the background sender runs (0 = never; tests call it directly). */
+    HR_SYNC_INTERVAL_MS: int(15_000, 0),
+    HR_SYNC_MAX_ATTEMPTS: int(8, 1),
     /** Members of this group (plus admins) manage everyone's leave records. */
     LEAVE_MANAGER_GROUP: z.string().min(1).default("HR"),
     CLASSIFICATION_SUGGESTIONS: z.enum(["model", "rules", "off"]).default("model"),
@@ -84,6 +95,7 @@ export interface AppConfig {
   logLevel: Env["LOG_LEVEL"];
   rateLimitEnabled: boolean;
   leaveManagerGroup: string;
+  hrSync: { enabled: boolean; baseUrl: string; token?: string; timeoutMs: number; intervalMs: number; maxAttempts: number };
   auth: { jwtSecret: string; jwtExpiresIn: string; registration: "open" | "closed" | "first-user" };
   databaseUrl: string;
   qdrant: { url: string; apiKey?: string; collection: string };
@@ -133,6 +145,14 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: e.LOG_LEVEL,
     rateLimitEnabled: e.RATE_LIMIT_ENABLED,
     leaveManagerGroup: e.LEAVE_MANAGER_GROUP,
+    hrSync: {
+      enabled: e.HR_SYNC_ENABLED,
+      baseUrl: e.HR_API_BASE_URL,
+      token: e.HR_API_TOKEN || undefined,
+      timeoutMs: e.HR_API_TIMEOUT_MS,
+      intervalMs: e.HR_SYNC_INTERVAL_MS,
+      maxAttempts: e.HR_SYNC_MAX_ATTEMPTS,
+    },
     auth: { jwtSecret: e.JWT_SECRET, jwtExpiresIn: e.JWT_EXPIRES_IN, registration: e.ALLOW_REGISTRATION },
     databaseUrl: e.DATABASE_URL,
     qdrant: { url: e.QDRANT_URL, apiKey: e.QDRANT_API_KEY || undefined, collection: e.QDRANT_COLLECTION },

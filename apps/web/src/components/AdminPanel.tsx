@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type AdminUserDto } from "@/lib/api";
 import { CLASSIFICATION_LABELS, relativeTime } from "@/lib/format";
 
-type Tab = "people" | "groups" | "audit";
+type Tab = "people" | "groups" | "integrations" | "audit";
 
 /** Organisation settings: people (role, clearance, groups), groups, and the audit log. */
 export function AdminPanel({ token, currentUserId, onClose }: { token: string; currentUserId: string; onClose: () => void }) {
@@ -67,9 +67,9 @@ export function AdminPanel({ token, currentUserId, onClose }: { token: string; c
         <header className="panel-head">
           <h2>Organization</h2>
           <div className="tabs compact" role="tablist">
-            {(["people", "groups", "audit"] as Tab[]).map((t) => (
+            {(["people", "groups", "integrations", "audit"] as Tab[]).map((t) => (
               <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)} type="button">
-                {t === "people" ? "People" : t === "groups" ? "Groups" : "Audit log"}
+                {t === "people" ? "People" : t === "groups" ? "Groups" : t === "integrations" ? "Integrations" : "Audit log"}
               </button>
             ))}
           </div>
@@ -213,6 +213,8 @@ export function AdminPanel({ token, currentUserId, onClose }: { token: string; c
           </div>
         )}
 
+        {tab === "integrations" && <HrSyncStatus token={token} />}
+
         {tab === "audit" && (
           <ul className="audit-list">
             {audit.map((e) => (
@@ -239,4 +241,69 @@ function summarize(e: AuditEventDto): string {
   if (d.email) return `${d.email}: ${JSON.stringify(d.after)}`;
   if (d.name) return d.name;
   return "";
+}
+
+/** External HR leave system: status, delivery counts and failures (with retry). */
+function HrSyncStatus({ token }: { token: string }) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.admin.hrSync>> | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = useCallback(() => api.admin.hrSync(token).then(setData).catch((e: Error) => setMsg(e.message)), [token]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  if (!data) return <p className="muted small">Loading…</p>;
+  return (
+    <div className="integration" data-testid="hr-sync">
+      <h3 className="small">HR leave system</h3>
+      <p className="small">
+        Status: <strong>{data.enabled ? "On" : "Off"}</strong> · API: <code>{data.baseUrl}</code>
+      </p>
+      {!data.enabled && (
+        <p className="hint">
+          Leave changes aren&apos;t being sent anywhere yet. Set <code>HR_SYNC_ENABLED=true</code>, <code>HR_API_BASE_URL</code> and{" "}
+          <code>HR_API_TOKEN</code> once the HR system&apos;s API is ready (see docs/hr-integration.md).
+        </p>
+      )}
+      <p className="small">
+        Sent {data.counts.SENT ?? 0} · Waiting {data.counts.PENDING ?? 0} · Failed {data.counts.FAILED ?? 0}
+        {data.lastSentAt && <span className="muted"> · last sent {new Date(data.lastSentAt).toLocaleString()}</span>}
+      </p>
+      {data.enabled && (
+        <button
+          type="button"
+          className="btn-secondary btn-sm"
+          onClick={async () => {
+            const r = await api.admin.hrSyncNow(token);
+            setMsg(`Sent ${r.delivered} change(s)`);
+            await load();
+          }}
+        >
+          Send now
+        </button>
+      )}
+      {msg && <p className="notice small">{msg}</p>}
+      {data.failures.length > 0 && (
+        <ul className="entry-list small">
+          {data.failures.map((f) => (
+            <li key={f.id}>
+              <span>
+                <strong>{f.eventType}</strong> · {f.employeeEmail} · {f.attempts} attempt(s)
+                <span className="muted"> · {f.lastError}</span>
+              </span>
+              <button
+                type="button"
+                className="link"
+                onClick={async () => {
+                  await api.admin.hrRetry(token, f.id);
+                  await load();
+                }}
+              >
+                Retry
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }

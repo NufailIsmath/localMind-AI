@@ -84,7 +84,16 @@ Rules enforced on the server:
 - a per-person lock stops two simultaneous requests from both passing the balance check (a test verifies it fails without the lock);
 - every step is audited.
 
-**What's next.** All leave reads go through a `LeaveDataSource` interface, so a BambooHR/HiBob connector can replace the local tables later.
+### Syncing with the company's HR leave system
+
+Every leave change (request submitted, withdrawn, approved, rejected, cancelled, or recorded by HR) can be **pushed to the external HR leave system's API**:
+- **Never lost:** each change is written to an outbox in the same transaction.
+- **Ordered and safe to retry:** delivery is in order per leave, with exponential back-off and an `Idempotency-Key` on every call.
+- **Visible:** admins see status and failures (with Retry) in **Organization → Integrations**.
+
+It's **off by default**, with a placeholder URL (`https://hr-api.example.com/v1`), until the vendor's API is ready. The proposed contract, payload examples and open questions for the vendor are in [`docs/hr-integration.md`](docs/hr-integration.md). When the real spec arrives, only `modules/integrations/hr/hr-client.ts` changes.
+
+Reading balances from the HR system later is also possible: leave reads go through a `LeaveDataSource` interface.
 
 ## Features
 
@@ -279,6 +288,7 @@ All endpoints except `auth/register`, `auth/login` and `health` require `Authori
 | POST | `/api/leave/requests`, `/api/leave/requests/:id/cancel` | Submit (from a chat card or directly) / withdraw your own request |
 | GET / POST | `/api/leave/manage/requests`, `…/:id/approve`, `…/:id/reject` | HR approvals inbox |
 | GET / PUT / POST / DELETE | `/api/leave/manage/…` | People overview, allowances, entries, holidays, CSV import (HR group or admin) |
+| GET / POST | `/api/admin/integrations/hr`, `…/sync`, `…/events/:id/retry` | HR-system sync status, send now, retry failures (admin) |
 | GET | `/api/tools/executions` | Your tool audit log |
 | GET / POST / PATCH | `/api/admin/users`, `/api/admin/users/:id` | People: add, role, clearance, groups (admin) |
 | POST | `/api/documents/:id/suggestion/dismiss` | Keep the current label instead of the suggested one |
@@ -413,6 +423,7 @@ All settings are environment variables validated at startup (see [`.env.example`
 | `TOOL_TIMEOUT_MS` / `LLM_TIMEOUT_MS` | `15000` / `180000` | Fault-tolerance limits |
 | `ALLOW_REGISTRATION` | `first-user` | `first-user`: sign-up closes after the first (admin) account; admins add people. `true`: always open (demos; reveals registered emails). `false`: closed |
 | `LEAVE_MANAGER_GROUP` | `HR` | Members of this group (and admins) manage everyone's leave |
+| `HR_SYNC_ENABLED` / `HR_API_BASE_URL` / `HR_API_TOKEN` | `false` / `https://hr-api.example.com/v1` / – | Push leave changes to the external HR system (see `docs/hr-integration.md`) |
 | `CLASSIFICATION_SUGGESTIONS` | `model` | `model` (rules + local model), `rules`, or `off` |
 | `RESTRICTED_NOTICE_HOURLY_LIMIT` | `30` | Per-user cap on "that's confidential" notices |
 

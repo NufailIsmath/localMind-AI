@@ -15,6 +15,8 @@ import type { ToolRegistry } from "./modules/tools/tool.registry.js";
 import { IngestionService } from "./rag/ingestion.service.js";
 import { ClassificationService } from "./rag/classification.service.js";
 import { LeaveService, PrismaLeaveDataSource } from "./modules/leave/leave.service.js";
+import { HttpHrLeaveClient, type HrLeaveClient } from "./modules/integrations/hr/hr-client.js";
+import { HrSyncService } from "./modules/integrations/hr/hr-sync.service.js";
 import { RetrievalService } from "./rag/retrieval.service.js";
 import { QdrantVectorStore, type VectorStore } from "./rag/vector.service.js";
 
@@ -40,6 +42,7 @@ export interface Services {
   access: AccessService;
   accessRequests: AccessRequestService;
   leave: LeaveService;
+  hrSync: HrSyncService;
 }
 
 /** Infrastructure adapters that tests may replace. */
@@ -49,6 +52,8 @@ export interface ServiceOverrides {
   llm?: LlmService;
   embeddings?: EmbeddingService;
   vectors?: VectorStore;
+  /** Lets tests point the HR sync at a mock server or a fake client. */
+  hrClient?: HrLeaveClient;
 }
 
 /** Composition root: wires every service from configuration. */
@@ -107,7 +112,13 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
       ? undefined
       : new ClassificationService(config.rag.classificationSuggestions === "model" ? llm : undefined, log),
   );
-  const leave = new LeaveService(prisma, new PrismaLeaveDataSource(prisma), access, { managerGroup: config.leaveManagerGroup });
+  const hrSync = new HrSyncService(
+    prisma,
+    overrides.hrClient ?? new HttpHrLeaveClient({ baseUrl: config.hrSync.baseUrl, token: config.hrSync.token, timeoutMs: config.hrSync.timeoutMs }),
+    config.hrSync,
+    log,
+  );
+  const leave = new LeaveService(prisma, new PrismaLeaveDataSource(prisma), access, { managerGroup: config.leaveManagerGroup }, hrSync);
   const tools = createToolRegistry({
     leave,
     prisma,
@@ -125,5 +136,5 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
   );
   const auth = new AuthService(prisma, config.auth.registration);
 
-  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests, leave };
+  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests, leave, hrSync };
 }

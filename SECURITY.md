@@ -34,6 +34,7 @@ Two assumptions drive the design:
 | Transport | CORS allow-list; Helmet security headers; 1 MB JSON body limit; Bearer tokens (no cookies, so no CSRF); infra ports bound to 127.0.0.1 | `app.ts`, `infrastructure/` |
 | Info leakage | Generic 500s; anonymous `/api/health` returns up/down only | `modules/health/` |
 | Actions with side effects | The model can only **propose** (e.g. `propose_leave_request` returns a card); only an authenticated user click submits, and the server re-reads the exact card it prepared. Approvals require the HR role and can't be self-approved; per-person locking prevents double-booking races. | `modules/leave/`, `LeaveRequestCard.tsx` |
+| HR-system sync | Outbound only (no inbound endpoint yet); off by default; placeholder `example.com` URL; bearer token from env, never logged; HTTPS expected in production; idempotency keys make retries safe; failures visible to admins only | `modules/integrations/hr/` |
 | Personal (leave) data | Self-service tools have no user parameter; identity comes from the session; management needs the HR group or admin; CSV import validated all-or-nothing; every change audited | `modules/leave/`, `tools/leave.tools.ts` |
 | Audit | Sharing, access, grants, requests, group/user changes, injection detections, notice-limit hits | `AuditEvent` table, admin panel |
 
