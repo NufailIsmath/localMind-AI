@@ -28,7 +28,8 @@
     "db:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate",
     "mock:ollama": "npm run mock:ollama -w @localmind/api",
-    "test:all": "npm run test:all -w @localmind/api"
+    "test:all": "npm run test:all -w @localmind/api",
+    "seed:demo": "npm run seed:demo -w @localmind/api"
   },
   "devDependencies": {
     "prisma": "6.19.3",

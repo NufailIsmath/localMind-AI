@@ -2,6 +2,7 @@
  * Brute-force in-memory VectorStore (cosine similarity). Used by the RAG
  * evaluation script and unit tests; not meant for production data volumes.
  */
+import { canRead, type AccessPayload } from "../modules/access/access.policy.js";
 import type { VectorPoint, VectorSearchHit, VectorSearchParams, VectorStore } from "./vector.service.js";
 
 const cosine = (a: number[], b: number[]) => {
@@ -25,16 +26,21 @@ export class InMemoryVectorStore implements VectorStore {
   }
   async search(params: VectorSearchParams): Promise<VectorSearchHit[]> {
     return [...this.points.values()]
-      .filter((p) => p.payload.userId === params.userId)
+      .filter((p) => canRead(params.principal, p.payload))
       .filter((p) => !params.documentIds?.length || params.documentIds.includes(p.payload.documentId))
       .map((p) => ({ id: p.id, score: cosine(p.vector, params.vector), payload: p.payload }))
       .filter((h) => params.scoreThreshold === undefined || h.score >= params.scoreThreshold)
       .sort((a, b) => b.score - a.score)
       .slice(0, params.limit);
   }
-  async deleteByDocument(userId: string, documentId: string) {
+  async deleteByDocument(documentId: string) {
     for (const [id, p] of this.points) {
-      if (p.payload.userId === userId && p.payload.documentId === documentId) this.points.delete(id);
+      if (p.payload.documentId === documentId) this.points.delete(id);
+    }
+  }
+  async setAccess(documentId: string, access: AccessPayload) {
+    for (const p of this.points.values()) {
+      if (p.payload.documentId === documentId) Object.assign(p.payload, access);
     }
   }
 }

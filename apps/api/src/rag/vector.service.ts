@@ -1,10 +1,13 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { UpstreamError, errorMessage } from "../lib/errors.js";
+import { qdrantAccessFilter, type AccessPayload, type AccessPrincipal } from "../modules/access/access.policy.js";
 
-/** Payload stored with every chunk vector. */
-export interface ChunkPayload {
-  /** Owner of the document. Every search MUST filter on this. */
-  userId: string;
+/**
+ * Payload stored with every chunk vector. The access fields (owner,
+ * visibility, classification, groups) are copied from PostgreSQL so Qdrant can
+ * enforce the access policy inside the similarity search itself.
+ */
+export interface ChunkPayload extends AccessPayload {
   documentId: string;
   fileName: string;
   chunkIndex: number;
@@ -21,8 +24,8 @@ export interface VectorPoint {
 
 export interface VectorSearchParams {
   vector: number[];
-  /** Mandatory: retrieval is always scoped to a single user. */
-  userId: string;
+  /** Mandatory: every search is filtered by what this principal may read. */
+  principal: AccessPrincipal;
   limit: number;
   scoreThreshold?: number;
   documentIds?: string[];
@@ -38,7 +41,9 @@ export interface VectorStore {
   ensureCollection(): Promise<void>;
   upsert(points: VectorPoint[]): Promise<void>;
   search(params: VectorSearchParams): Promise<VectorSearchHit[]>;
-  deleteByDocument(userId: string, documentId: string): Promise<void>;
+  deleteByDocument(documentId: string): Promise<void>;
+  /** Rewrites the access fields of every chunk of a document (after sharing changes). */
+  setAccess(documentId: string, access: AccessPayload): Promise<void>;
   health(): Promise<void>;
 }
 
@@ -82,9 +87,10 @@ export class QdrantVectorStore implements VectorStore {
           );
         }
       }
-      for (const field of ["userId", "documentId"]) {
+      for (const field of ["userId", "documentId", "visibility", "groupIds"]) {
         await this.client.createPayloadIndex(this.collection, { field_name: field, field_schema: "keyword", wait: true });
       }
+      await this.client.createPayloadIndex(this.collection, { field_name: "classificationLevel", field_schema: "integer", wait: true });
     });
   }
 
@@ -102,14 +108,14 @@ export class QdrantVectorStore implements VectorStore {
   }
 
   async search(params: VectorSearchParams): Promise<VectorSearchHit[]> {
-    if (!params.userId) throw new Error("search requires a userId");
-    const must: Record<string, unknown>[] = [{ key: "userId", match: { value: params.userId } }];
+    if (!params.principal?.userId) throw new Error("search requires an access principal");
+    const must: Record<string, unknown>[] = [];
     if (params.documentIds?.length) must.push({ key: "documentId", match: { any: params.documentIds } });
 
     const res = await this.call("search", () =>
       this.client.query(this.collection, {
         query: params.vector,
-        filter: { must },
+        filter: { must, ...qdrantAccessFilter(params.principal) },
         limit: params.limit,
         with_payload: true,
         ...(params.scoreThreshold !== undefined ? { score_threshold: params.scoreThreshold } : {}),
@@ -122,16 +128,21 @@ export class QdrantVectorStore implements VectorStore {
     }));
   }
 
-  async deleteByDocument(userId: string, documentId: string): Promise<void> {
+  async deleteByDocument(documentId: string): Promise<void> {
     await this.call("delete", () =>
       this.client.delete(this.collection, {
         wait: true,
-        filter: {
-          must: [
-            { key: "userId", match: { value: userId } },
-            { key: "documentId", match: { value: documentId } },
-          ],
-        },
+        filter: { must: [{ key: "documentId", match: { value: documentId } }] },
+      }),
+    );
+  }
+
+  async setAccess(documentId: string, access: AccessPayload): Promise<void> {
+    await this.call("setAccess", () =>
+      this.client.setPayload(this.collection, {
+        wait: true,
+        payload: { ...access },
+        filter: { must: [{ key: "documentId", match: { value: documentId } }] },
       }),
     );
   }

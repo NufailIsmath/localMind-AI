@@ -6,6 +6,7 @@ import { Orchestrator } from "./ai/orchestrator.service.js";
 import type { EmbeddingService, LlmService } from "./ai/types.js";
 import type { AppConfig } from "./config/env.js";
 import { createPrisma } from "./database/prisma.js";
+import { AccessService } from "./modules/access/access.service.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { PrismaChatRepository } from "./modules/chat/chat.repository.js";
 import { createToolRegistry } from "./modules/tools/index.js";
@@ -33,6 +34,7 @@ export interface Services {
   chatRepository: PrismaChatRepository;
   orchestrator: Orchestrator;
   auth: AuthService;
+  access: AccessService;
 }
 
 /** Infrastructure adapters that tests may replace. */
@@ -74,18 +76,12 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
       dimensions: config.ollama.embeddingDimensions,
     });
 
+  const access = new AccessService(prisma, vectors, log);
   const retrieval = new RetrievalService(
     embeddings,
     vectors,
     { limit: config.rag.retrievalLimit, scoreThreshold: config.rag.scoreThreshold },
-    async (userId, documentIds) => {
-      if (documentIds.length === 0) return new Set();
-      const rows = await prisma.document.findMany({
-        where: { userId, id: { in: documentIds }, status: { in: ["READY", "PROCESSING", "PENDING"] } },
-        select: { id: true },
-      });
-      return new Set(rows.map((r) => r.id));
-    },
+    (principal, documentIds) => access.readableIds(principal, documentIds),
   );
   const ingestion = new IngestionService(
     prisma,
@@ -109,5 +105,5 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
   const orchestrator = new Orchestrator(llm, tools, chatRepository, config.orchestrator, log);
   const auth = new AuthService(prisma, config.auth.allowRegistration);
 
-  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth };
+  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access };
 }

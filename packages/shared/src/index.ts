@@ -6,11 +6,52 @@
 export type DocumentStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
 export type MessageRole = "USER" | "ASSISTANT";
 export type ToolExecutionStatus = "SUCCESS" | "ERROR" | "DENIED";
+/** Ordered from least to most sensitive. */
+export type Classification = "PUBLIC" | "INTERNAL" | "CONFIDENTIAL" | "RESTRICTED";
+export type DocumentVisibility = "PRIVATE" | "ORGANIZATION" | "GROUPS";
+export const CLASSIFICATIONS: readonly Classification[] = ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"];
+
+export interface GroupRefDto {
+  id: string;
+  name: string;
+}
 
 export interface UserDto {
   id: string;
   email: string;
   role: "USER" | "ADMIN";
+  /** Highest classification this user may read when a document is shared with them. */
+  clearance: Classification;
+  groups: GroupRefDto[];
+  createdAt: string;
+}
+
+export interface GroupDto extends GroupRefDto {
+  description: string | null;
+  memberCount: number;
+  documentCount: number;
+  createdAt: string;
+}
+
+export interface UpdateUserAccessRequest {
+  role?: "USER" | "ADMIN";
+  clearance?: Classification;
+  groupIds?: string[];
+}
+
+export interface DocumentAccessRequest {
+  visibility?: DocumentVisibility;
+  classification?: Classification;
+  groupIds?: string[];
+}
+
+export interface AuditEventDto {
+  id: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  actorEmail: string | null;
+  details: unknown;
   createdAt: string;
 }
 
@@ -28,6 +69,9 @@ export interface Source {
   chunkIndex: number;
   pageStart: number | null;
   pageEnd: number | null;
+  classification: Classification;
+  /** True when the passage comes from a document another user shared. */
+  shared: boolean;
   score: number;
   /** A short excerpt of the chunk for display. */
   excerpt: string;
@@ -86,6 +130,12 @@ export interface DocumentDto {
   chunkCount: number;
   uploadedAt: string;
   indexedAt: string | null;
+  visibility: DocumentVisibility;
+  classification: Classification;
+  groups: GroupRefDto[];
+  /** Whether the current user uploaded it (and can manage it). */
+  owned: boolean;
+  ownerEmail: string;
 }
 
 export interface ToolInfoDto {

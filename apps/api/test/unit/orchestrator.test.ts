@@ -10,10 +10,11 @@ import { RetrievalService } from "../../src/rag/retrieval.service.js";
 import { HashEmbeddingService, hashEmbed } from "../helpers/hash-embeddings.js";
 import { InMemoryChatRepository } from "../helpers/memory-chat-repository.js";
 import { InMemoryVectorStore } from "../../src/rag/memory-vector.store.js";
+import { principal, privateAccess } from "../helpers/access.js";
 import { ScriptedLlm, callTool, say, type Step } from "../helpers/scripted-llm.js";
 
 const silent = { info() {}, warn() {} };
-const USER = { id: "u1", role: "USER" as const };
+const USER = principal("u1");
 const OPTS: OrchestratorOptions = { maxToolRounds: 3, maxToolCallsPerRound: 2, historyMessageLimit: 10 };
 
 let vectors: InMemoryVectorStore;
@@ -25,7 +26,7 @@ function addChunk(userId: string, documentId: string, chunkIndex: number, conten
     {
       id: `${documentId}-${chunkIndex}`,
       vector: hashEmbed(content),
-      payload: { userId, documentId, fileName, chunkIndex, content, pageStart: chunkIndex + 1, pageEnd: chunkIndex + 1 },
+      payload: { ...privateAccess(userId), documentId, fileName, chunkIndex, content, pageStart: chunkIndex + 1, pageEnd: chunkIndex + 1 },
     },
   ]);
 }
@@ -154,7 +155,7 @@ describe("Orchestrator", () => {
   it("refuses to continue someone else's conversation", async () => {
     const { conversationId } = await orchestrator([say("x")]).orch.run({ user: USER, message: "mine" });
     await expect(
-      orchestrator([say("y")]).orch.run({ user: { id: "u2", role: "USER" }, message: "hijack", conversationId }),
+      orchestrator([say("y")]).orch.run({ user: principal("u2"), message: "hijack", conversationId }),
     ).rejects.toThrow("Conversation not found");
   });
 
@@ -171,7 +172,7 @@ describe("Orchestrator", () => {
     );
     const { orch, llm } = orchestrator([say("a"), say("b")]);
     await orch.run({ user: USER, message: "q" });
-    await orch.run({ user: { id: "admin", role: "ADMIN" }, message: "q" });
+    await orch.run({ user: principal("admin", { role: "ADMIN" }), message: "q" });
     expect(llm.requests[0]!.tools!.map((t) => t.name)).not.toContain("admin_tool");
     expect(llm.requests[1]!.tools!.map((t) => t.name)).toContain("admin_tool");
   });

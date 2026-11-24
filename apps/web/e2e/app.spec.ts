@@ -8,7 +8,9 @@ test.describe("LocalMind", () => {
     await signUp(page);
 
     await page.getByTestId("file-input").setInputFiles([`${DOCS}/employee-handbook.md`, `${DOCS}/product-faq.txt`]);
-    await expect(page.locator(".badge-ready")).toHaveCount(2, { timeout: 30_000 });
+    // Org-wide documents from the demo seed may also be listed, so wait for indexing to finish instead of counting.
+    await expect(page.locator(".badge-pending, .badge-processing")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.locator(".doc").filter({ hasNotText: "from " }).locator(".badge-ready")).toHaveCount(2);
 
     const answer = await ask(page, "How many days of paid annual leave do full-time employees get?");
     await expect(answer).toContainText("21 days of paid annual leave");

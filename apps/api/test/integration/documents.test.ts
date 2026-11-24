@@ -1,6 +1,7 @@
 import type { DocumentDto } from "@localmind/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeDocx, makePdf } from "../helpers/fixtures.js";
+import { principal } from "../helpers/access.js";
 import { auth, createHarness, infraReady, type Harness } from "./harness.js";
 
 const POLICY = `Company Leave Policy.
@@ -29,7 +30,8 @@ describe.runIf(infraReady)("documents API (PostgreSQL + Qdrant)", () => {
   it("accepts an upload, indexes it in the background and records chunk metadata", async () => {
     const res = await h.upload(alice, "leave-policy.txt", POLICY);
     expect(res.status).toBe(202);
-    expect(res.body).toMatchObject({ filename: "leave-policy.txt", status: "PENDING", mimeType: "text/plain" });
+    expect(res.body).toMatchObject({ filename: "leave-policy.txt", mimeType: "text/plain", visibility: "PRIVATE", owned: true });
+    expect(["PENDING", "PROCESSING"]).toContain(res.body.status);
     policyId = res.body.id;
 
     await h.waitForIndexing();
@@ -43,13 +45,13 @@ describe.runIf(infraReady)("documents API (PostgreSQL + Qdrant)", () => {
   });
 
   it("retrieves relevant chunks from Qdrant, scoped to the owner", async () => {
-    const hits = await h.app.services.retrieval.retrieve(alice ? (await me(alice)).id : "", "How many days of sick leave do employees get?");
+    const hits = await h.app.services.retrieval.retrieve(principal((await me(alice)).id), "How many days of sick leave do employees get?");
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0]!.content).toContain("10 days of paid sick leave");
     expect(hits[0]!.fileName).toBe("leave-policy.txt");
     expect(hits.every((x, i) => i === 0 || hits[i - 1]!.score >= x.score)).toBe(true);
 
-    const bobHits = await h.app.services.retrieval.retrieve((await me(bob)).id, "How many days of sick leave do employees get?");
+    const bobHits = await h.app.services.retrieval.retrieve(principal((await me(bob)).id), "How many days of sick leave do employees get?");
     expect(bobHits).toEqual([]);
   });
 
@@ -63,7 +65,7 @@ describe.runIf(infraReady)("documents API (PostgreSQL + Qdrant)", () => {
     expect(docs.find((d) => d.filename === "benefits.pdf")).toMatchObject({ status: "READY", pageCount: 2 });
     expect(docs.find((d) => d.filename === "onboarding.docx")).toMatchObject({ status: "READY", pageCount: null });
 
-    const hits = await h.app.services.retrieval.retrieve((await me(alice)).id, "gym stipend per month");
+    const hits = await h.app.services.retrieval.retrieve(principal((await me(alice)).id), "gym stipend per month");
     // Both short pages fit in one chunk, which is cited as spanning pages 1–2.
     expect(hits[0]).toMatchObject({ fileName: "benefits.pdf", pageStart: 1, pageEnd: 2 });
     expect(hits[0]!.content).toContain("gym stipend is 50 dollars");
@@ -132,7 +134,7 @@ describe.runIf(infraReady)("documents API (PostgreSQL + Qdrant)", () => {
     expect(res.statusCode).toBe(204);
     expect(await countPoints(h, policyId)).toBe(0);
     expect(await h.app.services.prisma.documentChunk.count({ where: { documentId: policyId } })).toBe(0);
-    const hits = await h.app.services.retrieval.retrieve((await me(alice)).id, "sick leave days");
+    const hits = await h.app.services.retrieval.retrieve(principal((await me(alice)).id), "sick leave days");
     expect(hits.every((x) => x.documentId !== policyId)).toBe(true);
   });
 

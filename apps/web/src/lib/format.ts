@@ -25,3 +25,16 @@ export const TOOL_LABELS: Record<string, string> = {
   get_usage_stats: "Read usage stats",
   get_system_stats: "Read system stats",
 };
+
+export const CLASSIFICATION_LABELS = {
+  PUBLIC: "Public",
+  INTERNAL: "Internal",
+  CONFIDENTIAL: "Confidential",
+  RESTRICTED: "Restricted",
+} as const;
+
+export const VISIBILITY_LABELS = {
+  PRIVATE: "Only me",
+  ORGANIZATION: "Everyone (by clearance)",
+  GROUPS: "Specific groups",
+} as const;

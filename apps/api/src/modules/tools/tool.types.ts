@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { RetrievedChunk } from "../../rag/retrieval.service.js";
+import type { AccessPrincipal } from "../access/access.policy.js";
 
 export type Role = "USER" | "ADMIN";
 
@@ -10,6 +11,8 @@ export type Role = "USER" | "ADMIN";
 export interface ToolContext {
   userId: string;
   userRole: Role;
+  /** Full access identity (clearance, groups) for data-access tools. */
+  principal: AccessPrincipal;
   conversationId: string;
   signal: AbortSignal;
   /** Registers retrieved chunks as citable sources; returns their refs (S1, S2…). */

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ConversationSummaryDto, UserDto } from "@localmind/shared";
-import { relativeTime } from "@/lib/format";
+import { CLASSIFICATION_LABELS, relativeTime } from "@/lib/format";
 
 export function Sidebar({
   user,
@@ -11,6 +11,7 @@ export function Sidebar({
   onNew,
   onDelete,
   onLogout,
+  onOpenAdmin,
 }: {
   user: UserDto;
   conversations: ConversationSummaryDto[];
@@ -19,6 +20,7 @@ export function Sidebar({
   onNew: () => void;
   onDelete: (id: string) => void;
   onLogout: () => void;
+  onOpenAdmin: () => void;
 }) {
   return (
     <nav className="sidebar" aria-label="Conversations">
@@ -49,11 +51,21 @@ export function Sidebar({
           <div className="ellipsis" title={user.email}>
             {user.email}
           </div>
-          <div className="muted">{user.role === "ADMIN" ? "Administrator" : "Member"}</div>
+          <div className="muted">
+            {user.role === "ADMIN" ? "Administrator" : "Member"} · {CLASSIFICATION_LABELS[user.clearance]} clearance
+          </div>
+          {user.groups.length > 0 && <div className="muted ellipsis">{user.groups.map((g) => g.name).join(", ")}</div>}
         </div>
-        <button type="button" className="link" onClick={onLogout}>
-          Sign out
-        </button>
+        <div className="account-actions">
+          {user.role === "ADMIN" && (
+            <button type="button" className="link" onClick={onOpenAdmin}>
+              Organization
+            </button>
+          )}
+          <button type="button" className="link" onClick={onLogout}>
+            Sign out
+          </button>
+        </div>
       </div>
     </nav>
   );

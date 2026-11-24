@@ -14,8 +14,9 @@ export const searchKnowledgeTool = (retrieval: RetrievalService, maxLimit = 10) 
       limit: z.number().int().min(1).max(maxLimit).optional().describe("Maximum passages to return (default 5)"),
     }),
     async execute({ query, limit }, ctx) {
-      // Ownership comes from the trusted context; the model cannot choose whose documents to search.
-      const chunks = await retrieval.retrieve(ctx.userId, query, { limit, signal: ctx.signal });
+      // Access comes from the trusted context; the model cannot choose whose documents to search
+      // or raise its own clearance. Documents the user may not read are never retrieved at all.
+      const chunks = await retrieval.retrieve(ctx.principal, query, { limit, signal: ctx.signal });
       if (chunks.length === 0) {
         return { results: [], note: "No relevant passages found in the user's documents." };
       }
@@ -25,6 +26,7 @@ export const searchKnowledgeTool = (retrieval: RetrievalService, maxLimit = 10) 
           ref: refs[i],
           fileName: c.fileName,
           pages: c.pageStart === null ? null : c.pageStart === c.pageEnd ? `${c.pageStart}` : `${c.pageStart}-${c.pageEnd}`,
+          classification: c.classification,
           score: Number(c.score.toFixed(3)),
           content: c.content,
         })),

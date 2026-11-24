@@ -6,6 +6,7 @@ import { api, ApiError, tokenStore } from "@/lib/api";
 import { AuthForm } from "./AuthForm";
 import { ChatView } from "./ChatView";
 import { DocumentsPanel } from "./DocumentsPanel";
+import { AdminPanel } from "./AdminPanel";
 import { HealthBadge } from "./HealthBadge";
 import { Sidebar } from "./Sidebar";
 
@@ -18,6 +19,13 @@ export function Workspace() {
   const [conversations, setConversations] = useState<ConversationSummaryDto[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>("chat");
+  const [adminOpen, setAdminOpen] = useState(false);
+
+  // Admins may change their own clearance/groups; refresh the profile when the panel closes.
+  const closeAdmin = useCallback(() => {
+    setAdminOpen(false);
+    if (token) api.me(token).then(setUser).catch(() => {});
+  }, [token]);
 
   const logout = useCallback(() => {
     tokenStore.set(null);
@@ -105,6 +113,7 @@ export function Workspace() {
         }}
         onDelete={(id) => void deleteConversation(id)}
         onLogout={logout}
+        onOpenAdmin={() => setAdminOpen(true)}
       />
       <ChatView
         token={token}
@@ -113,7 +122,8 @@ export function Workspace() {
         onTurnFinished={refreshConversations}
         onUnauthorized={logout}
       />
-      <DocumentsPanel token={token} onUnauthorized={logout} />
+      <DocumentsPanel key={user.clearance + user.groups.map((g) => g.id).join()} token={token} user={user} onUnauthorized={logout} />
+      {adminOpen && <AdminPanel token={token} currentUserId={user.id} onClose={closeAdmin} />}
     </div>
   );
 }

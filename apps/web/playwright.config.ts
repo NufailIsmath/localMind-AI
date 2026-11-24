@@ -6,7 +6,9 @@ import { defineConfig, devices } from "@playwright/test";
  *
  *   npm run infra:up && npm run db:deploy
  *   npm run mock:ollama        # terminal 1
- *   npm run dev:api            # terminal 2
+ *   RETRIEVAL_SCORE_THRESHOLD=0.05 npm run dev:api   # terminal 2 (the mock's toy
+ *                              # embeddings score lower than a real model)
+ *   npm run seed:demo          # demo organisation for access.spec.ts
  *   npm run build -w @localmind/web && npm run start -w @localmind/web   # terminal 3
  *   npm run e2e -w @localmind/web
  */

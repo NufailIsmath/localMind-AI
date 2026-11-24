@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { ChatResponse, ChatStreamEvent, Source, ToolExecutionSummary } from "@localmind/shared";
 import type { ChatRepository } from "../modules/chat/chat.repository.js";
 import type { ToolRegistry } from "../modules/tools/tool.registry.js";
-import type { Role, ToolResult } from "../modules/tools/tool.types.js";
+import type { ToolResult } from "../modules/tools/tool.types.js";
+import type { AccessPrincipal } from "../modules/access/access.policy.js";
 import type { RetrievedChunk } from "../rag/retrieval.service.js";
 import {
   buildSystemPrompt,
@@ -25,7 +26,8 @@ export interface OrchestratorLogger {
 }
 
 export interface ChatTurnInput {
-  user: { id: string; role: Role };
+  /** The authenticated user — identity, role, clearance and groups. */
+  user: AccessPrincipal;
   conversationId?: string;
   message: string;
   signal?: AbortSignal;
@@ -71,6 +73,8 @@ class SourceCollector {
           chunkIndex: c.chunkIndex,
           pageStart: c.pageStart,
           pageEnd: c.pageEnd,
+          classification: c.classification,
+          shared: c.shared,
           score: Number(c.score.toFixed(4)),
           excerpt: bestExcerpt(c.content, query),
         };
@@ -119,7 +123,7 @@ export class Orchestrator {
     const emit = (e: ChatStreamEvent) => onEvent?.(e);
     const started = Date.now();
 
-    const conversation = await this.repo.resolveConversation(user.id, input.conversationId, conversationTitle(input.message));
+    const conversation = await this.repo.resolveConversation(user.userId, input.conversationId, conversationTitle(input.message));
     const history = await this.repo.loadHistory(conversation.id, this.opts.historyMessageLimit);
     await this.repo.addUserMessage(conversation.id, input.message);
     emit({ type: "conversation", conversationId: conversation.id });
@@ -206,7 +210,7 @@ export class Orchestrator {
   private async executeTool(
     call: ToolCall,
     conversationId: string,
-    user: { id: string; role: Role },
+    user: AccessPrincipal,
     sources: SourceCollector,
     signal: AbortSignal,
     emit: (e: ChatStreamEvent) => void,
@@ -215,8 +219,9 @@ export class Orchestrator {
     emit({ type: "tool_start", id, tool: call.name, arguments: call.arguments });
 
     const result: ToolResult = await this.tools.execute(call.name, call.arguments, {
-      userId: user.id,
+      userId: user.userId,
       userRole: user.role,
+      principal: user,
       conversationId,
       signal,
       addSources: (chunks, query) => sources.add(chunks, query),

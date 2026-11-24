@@ -10,7 +10,7 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 | **Backend** | Node.js · TypeScript · Fastify · Zod · Prisma |
 | **Data** | Qdrant (vectors) · PostgreSQL (users, documents, chats, tool audit log) |
 | **Frontend** | Next.js 16 · React 19 (streaming chat UI) |
-| **Testing** | Vitest — 78 unit + 40 integration tests (real Postgres/Qdrant), Playwright E2E, RAG evaluation harness |
+| **Testing** | Vitest — 84 unit + 81 integration tests (real Postgres/Qdrant), 10 Playwright E2E, RAG evaluation harness |
 | **Infra** | Docker Compose |
 
 ## Features
@@ -19,7 +19,7 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 - **Native tool calling** — the model can search your knowledge base, do exact arithmetic, check the time, and query PostgreSQL (your documents, usage stats). Admin-only tools demonstrate role-based permissions.
 - **Streaming** — tokens and live tool activity over Server-Sent Events.
 - **Conversation memory** — multi-turn chats persisted in PostgreSQL.
-- **Multi-user isolation** — every retrieval and tool query is scoped to the authenticated user *outside* the model.
+- **Document-level access control** — documents are private, shared with the whole organisation, or shared with groups (HR, Executives…), and classified Public → Internal → Confidential → Restricted. Users have a clearance level and group memberships. An intern asking for the CEO's salary never retrieves the compensation file, so the model never sees it. Enforced in Qdrant *and* re-checked in PostgreSQL, outside the model.
 - **Observability** — every tool execution is audited (arguments, status, duration); structured logs for ingestion and chat turns.
 - **Fault tolerance** — timeouts, retries with backoff for transient Ollama failures, tool timeouts, bounded tool loops, graceful degradation.
 - **Measurable RAG** — an evaluation harness reports Hit@k, Precision@k, MRR, answer accuracy and citation accuracy over a labelled question set.
@@ -112,6 +112,38 @@ Open http://localhost:3000, create an account (the first account becomes the adm
 
 > **No GPU / can't run Ollama?** `npm run mock:ollama` starts a rule-based stand-in for the Ollama API on port 11434 so you can click through the whole app. It pattern-matches instead of generating text — use it for demos and E2E tests, not for judging answer quality.
 
+## Access control
+
+Who can read a document is decided by one policy ([`access.policy.ts`](apps/api/src/modules/access/access.policy.ts)):
+
+> A user can read a document if they **own** it, **or** it's shared with the **organisation** and its classification ≤ their clearance, **or** it's shared with a **group they belong to** and its classification ≤ their clearance.
+
+Classification is checked *on top of* group membership, so adding an intern to the HR group by mistake still doesn't expose Restricted files. Admins manage people, groups and any document, but they **don't** automatically read everything: their retrieval follows the same policy.
+
+**Where it's enforced**
+
+```
+question ─► search_knowledge(query)          ← model controls only the query text
+              │  principal = { userId, clearance, groupIds } from the login token,
+              │              reloaded from PostgreSQL on every request
+              ▼
+         Qdrant search with a payload filter  ← chunks the user can't read are never candidates
+              ▼
+         PostgreSQL re-check of every hit      ← source of truth; stale vector payloads can't widen access
+              ▼
+         passages the user may read ─► model
+```
+
+The policy is compiled into a Qdrant filter, a Prisma `where` and a plain predicate, so retrieval, document listing, the `list_documents` tool and the in-memory test store all apply the same rule. Sharing changes update PostgreSQL first, so revocations take effect immediately, then sync the vector payloads. Removing someone from a group, lowering their clearance or deleting a group applies on their very next request. Sharing, permission and group changes are written to an **audit log**.
+
+Rules for sharing: non-admins can only share with groups they belong to, so nobody can push content (or prompt injections) into another team's knowledge base. Readers can't change, re-index or delete documents they don't own. Users without read access get `404` rather than `403`, so they can't tell the document exists.
+
+**Try it:** `npm run seed:demo` creates a demo company (CEO, CFO, HR, engineer, intern) with classified documents. Sign in as `intern@demo.local` / `demo-password`, ask *"What is the CEO salary?"*, then try the same as `hr@demo.local`.
+
+**Tested by** a 41-case integration matrix: 5 people × 5 documents for retrieval, listing and direct access, checked both through Qdrant alone and through the full path. It also covers attempts to widen access through tool arguments, sharing into foreign groups, revocation via group removal, clearance changes and group deletion, a tampered vector payload, admin-only endpoints and the audit trail. Deliberately breaking either enforcement layer makes the suite fail.
+
+**Not covered:** answers given *before* access was revoked stay in that user's chat history. Revocation stops future retrieval; it can't un-tell a past answer.
+
 ## API
 
 All endpoints except `auth/register`, `auth/login` and `health` require `Authorization: Bearer <token>`.
@@ -126,13 +158,17 @@ All endpoints except `auth/register`, `auth/login` and `health` require `Authori
 | GET | `/api/chat` | List conversations |
 | GET | `/api/chat/:id` | Conversation with messages, sources and tool executions |
 | DELETE | `/api/chat/:id` | Delete a conversation |
-| POST | `/api/documents/upload` | Upload (multipart field `file`) → `202` with status `PENDING` |
-| GET | `/api/documents` | List documents and their indexing status |
+| POST | `/api/documents/upload` | Upload (multipart `file`, optional `visibility`, `classification`, `groupIds`) → `202` |
+| GET | `/api/documents` | Your documents plus those shared with you, with access settings |
 | GET | `/api/documents/:id` | One document |
 | POST | `/api/documents/:id/reindex` | Re-extract and re-embed (e.g. after changing the embedding model) |
 | DELETE | `/api/documents/:id` | Delete from PostgreSQL, Qdrant and disk |
 | GET | `/api/tools` | Tools available to your role, with JSON-schema parameters |
+| PATCH | `/api/documents/:id/access` | Change visibility, classification, groups (owner or admin) |
 | GET | `/api/tools/executions` | Your tool audit log |
+| GET / PATCH | `/api/admin/users`, `/api/admin/users/:id` | People: role, clearance, groups (admin) |
+| GET / POST / DELETE | `/api/admin/groups`, `/api/admin/groups/:id` | Groups (admin) |
+| GET | `/api/admin/audit` | Sharing / permission audit log (admin) |
 | GET | `/api/health` | Dependency health (200 / 503) |
 
 Example:
@@ -159,7 +195,7 @@ curl -s localhost:4000/api/chat -H "authorization: Bearer $TOKEN" -H "content-ty
 | `search_knowledge` | Qdrant semantic search over *your* documents | everyone |
 | `calculate` | Fixed binary operations (no `eval`) | everyone |
 | `get_current_time` | Server clock, optional IANA time zone | everyone |
-| `list_documents` | PostgreSQL (predefined, user-scoped query) | everyone |
+| `list_documents` | PostgreSQL (predefined query, access-policy scoped) | everyone |
 | `get_usage_stats` | PostgreSQL aggregates for your account | everyone |
 | `get_system_stats` | Instance-wide PostgreSQL aggregates | **ADMIN** |
 
@@ -180,7 +216,7 @@ export const weatherTool = defineTool({
 
 ## Security design
 
-- **The model never chooses whose data it sees.** Tools receive identity from a trusted server-side context; every Qdrant search filters on `userId` and every SQL query is scoped in code. Integration tests verify that a model asking for another user's data gets nothing.
+- **The model never chooses what data it sees.** Tools receive identity, clearance and groups from a trusted server-side context. Every Qdrant search carries the access-policy filter, every hit is re-checked in PostgreSQL, and every SQL query is scoped in code. See [Access control](#access-control).
 - **Tools are an allow-list.** Unknown tools are rejected, arguments are Zod-validated before any code runs, each tool has a timeout, and role checks run both when advertising tools and when executing them.
 - **No arbitrary SQL, shell or `eval`.** Database access is via predefined, read-only Prisma queries; the calculator is a fixed set of operations.
 - **Retrieved text is untrusted.** The system prompt tells the model to treat tool output as data, and results are JSON-encoded. The real protection is architectural: even a successful prompt injection can only call read-only tools scoped to the current user. (`eval/documents/security-policy.md` contains a deliberate injection test case.)
@@ -219,15 +255,17 @@ npm run test:integration      # real PostgreSQL (localmind_test DB) + real Qdran
 npm run typecheck
 
 # End-to-end (browser) — against the running stack with the mock model:
-npm run mock:ollama & npm run dev:api &
+npm run mock:ollama & RETRIEVAL_SCORE_THRESHOLD=0.05 npm run dev:api &
 npm run build -w @localmind/web && npm run start -w @localmind/web &
+npm run seed:demo             # demo organisation used by the access-control E2E tests
 npm run e2e -w @localmind/web
 ```
 
 - **Unit** — chunking (overlap, page attribution, pathological input), extraction (real PDF/DOCX fixtures), tool registry (validation, RBAC, timeouts, error masking), orchestrator loop (citations, round limits, per-round caps, hallucinated tools, history, streaming order), Ollama client (NDJSON split across TCP packets, retries, timeouts, aborts), config, auth crypto.
 - **Integration** — the real Fastify app through HTTP: auth flows and token tampering, uploads of every format, duplicate/oversize/spoofed files, background indexing, cross-user isolation of documents, retrieval, conversations and tool logs, re-indexing and deletion verified directly in Qdrant, end-to-end tool calling, permission denial, SSE streaming, failure paths, health checks.
 
-- **E2E (Playwright)** — sign-up, multi-file upload, cited RAG answer with citation highlighting, calculator tool, history restore after reload, backend-failure banner, switching chats mid-stream, unsupported uploads, and a mobile layout check.
+- **Access control** — the matrix described above, plus unit tests of the policy.
+- **E2E (Playwright)** — intern vs. HR asking for the CEO's salary, readers unable to manage others' documents, the admin panel, editing a document's access, sign-up, multi-file upload, cited RAG answer with citation highlighting, calculator tool, history restore after reload, backend-failure banner, switching chats mid-stream, unsupported uploads, and a mobile layout check.
 
 The integration suite uses a separate `localmind_test` database (created automatically by `infrastructure/postgres/init.sql`) and a throw-away Qdrant collection per run. It is skipped with a warning if the infrastructure isn't running.
 
@@ -256,6 +294,8 @@ localmind-ai/
 │   │   │   ├── ai/            # Ollama client, LLM + embedding services, orchestrator, prompts
 │   │   │   ├── rag/           # extraction, chunking, ingestion queue, retrieval, Qdrant store
 │   │   │   ├── modules/
+│   │   │   │   ├── access/    # access policy, sharing, groups, clearance, audit
+│   │   │   │   ├── admin/     # organisation administration endpoints
 │   │   │   │   ├── auth/      # registration, login, JWT, scrypt
 │   │   │   │   ├── chat/      # routes (REST + SSE) and conversation repository
 │   │   │   │   ├── documents/ # upload / list / reindex / delete
@@ -268,7 +308,7 @@ localmind-ai/
 │   │   │   └── server.ts      # process entry point
 │   │   ├── test/              # unit, integration, helpers (fake Ollama, scripted LLM, fixtures)
 │   │   ├── eval/              # RAG evaluation corpus + questions
-│   │   └── scripts/           # eval-rag.ts, mock-ollama.ts
+│   │   └── scripts/           # eval-rag.ts, mock-ollama.ts, seed-demo.ts
 │   └── web/                   # Next.js chat UI
 ├── packages/shared/           # API contract types shared by api and web
 ├── prisma/                    # schema + migrations

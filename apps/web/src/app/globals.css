@@ -735,6 +735,240 @@ button:disabled {
   color: var(--danger);
 }
 
+
+/* ---------- Access control ---------- */
+.cls {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.cls-public {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.cls-internal {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.cls-confidential {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.cls-restricted {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.vis {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.doc-access {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.sharing-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--muted);
+  flex-wrap: wrap;
+  text-align: left;
+}
+.sharing {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+.sharing label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.sharing select,
+.admin-table select,
+.inline-form input {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.sharing .hint {
+  margin: 0;
+  font-size: 12px;
+}
+.group-picker {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.group-picker legend {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0;
+  margin-bottom: 4px;
+}
+.sharing .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--text);
+  font-size: 13px;
+}
+.access-editor {
+  margin-top: 6px;
+}
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+.account-actions {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+.icon-btn.visible {
+  opacity: 1;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.35);
+  display: grid;
+  place-items: start center;
+  padding: 6vh 16px 16px;
+  z-index: 50;
+  overflow-y: auto;
+}
+.panel {
+  width: 100%;
+  max-width: 860px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.18);
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.panel-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.panel-head .icon-btn {
+  margin-left: auto;
+}
+.tabs.compact {
+  margin: 0;
+}
+.tabs.compact button {
+  padding: 5px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.admin-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.admin-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  max-width: 240px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 99px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.inline-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.inline-form input {
+  flex: 1;
+  font-size: 14px;
+}
+.group-list,
+.audit-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.group-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.audit-list li {
+  display: grid;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+.audit-list code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.audit-detail {
+  overflow-wrap: anywhere;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1100px) {
   .app {

@@ -8,6 +8,8 @@ import { JobQueue } from "../lib/job-queue.js";
 import { chunkDocument, type ChunkingOptions } from "./chunking.service.js";
 import { MIME_TYPES, detectKind, extractDocument } from "./extraction.service.js";
 import type { VectorPoint, VectorStore } from "./vector.service.js";
+import { toAccessPayload } from "../modules/access/access.policy.js";
+import type { SharingSettings } from "../modules/access/access.service.js";
 
 export interface IngestionOptions extends ChunkingOptions {
   uploadDir: string;
@@ -56,7 +58,13 @@ export class IngestionService {
     );
   }
 
-  async upload(userId: string, rawFilename: string, bytes: Buffer): Promise<Document> {
+  /** `sharing` must already be validated (AccessService.validateSharing). */
+  async upload(
+    userId: string,
+    rawFilename: string,
+    bytes: Buffer,
+    sharing: SharingSettings = { visibility: "PRIVATE", classification: "INTERNAL", groupIds: [] },
+  ): Promise<Document> {
     if (bytes.length === 0) throw badRequest("File is empty");
     if (bytes.length > this.opts.maxUploadBytes) {
       throw new AppError(413, "PAYLOAD_TOO_LARGE", `File exceeds the ${this.opts.maxUploadBytes} byte limit`);
@@ -71,7 +79,7 @@ export class IngestionService {
         throw conflict(`This file was already uploaded as "${existing.filename}"`, { documentId: existing.id });
       }
       // A previous attempt failed: replace it rather than blocking re-upload forever.
-      await this.remove(userId, existing.id);
+      await this.remove(existing.id);
     }
 
     const id = randomUUID();
@@ -79,7 +87,17 @@ export class IngestionService {
     await writeFile(this.filePath(id), bytes, { mode: 0o600 });
     try {
       const doc = await this.prisma.document.create({
-        data: { id, userId, filename, mimeType: MIME_TYPES[kind], sizeBytes: bytes.length, contentHash },
+        data: {
+          id,
+          userId,
+          filename,
+          mimeType: MIME_TYPES[kind],
+          sizeBytes: bytes.length,
+          contentHash,
+          visibility: sharing.visibility,
+          classification: sharing.classification,
+          groupAccess: { create: sharing.groupIds.map((groupId) => ({ groupId })) },
+        },
       });
       this.enqueue(doc.id);
       return doc;
@@ -91,19 +109,21 @@ export class IngestionService {
     }
   }
 
-  async remove(userId: string, documentId: string): Promise<void> {
-    const doc = await this.prisma.document.findFirst({ where: { id: documentId, userId } });
+  /** Deletes a document everywhere. Authorisation is the caller's job (AccessService.requireManageable). */
+  async remove(documentId: string): Promise<void> {
+    const doc = await this.prisma.document.findUnique({ where: { id: documentId }, select: { id: true } });
     if (!doc) throw notFound("Document not found");
     // Delete the row first: an indexing job that is still running checks for
     // the row inside its final transaction and cleans up its own vectors if it
     // is gone, so no ordering of the two operations can leave orphaned vectors.
-    await this.prisma.document.deleteMany({ where: { id: documentId, userId } });
-    await this.vectors.deleteByDocument(userId, documentId);
+    await this.prisma.document.deleteMany({ where: { id: documentId } });
+    await this.vectors.deleteByDocument(documentId);
     await rm(this.filePath(documentId), { force: true });
   }
 
-  async reindex(userId: string, documentId: string): Promise<Document> {
-    const doc = await this.prisma.document.findFirst({ where: { id: documentId, userId } });
+  /** Authorisation is the caller's job (AccessService.requireManageable). */
+  async reindex(documentId: string): Promise<Document> {
+    const doc = await this.prisma.document.findUnique({ where: { id: documentId } });
     if (!doc) throw notFound("Document not found");
     if (doc.status === "PENDING" || doc.status === "PROCESSING") throw conflict("Document is already being indexed");
     const updated = await this.prisma.document.update({
@@ -122,7 +142,7 @@ export class IngestionService {
   async recoverInterrupted(): Promise<number> {
     const interrupted = await this.prisma.document.findMany({ where: { status: "PROCESSING" }, select: { id: true, userId: true } });
     for (const d of interrupted) {
-      await this.vectors.deleteByDocument(d.userId, d.id).catch(() => {});
+      await this.vectors.deleteByDocument(d.id).catch(() => {});
       await this.prisma.documentChunk.deleteMany({ where: { documentId: d.id } });
     }
     await this.prisma.document.updateMany({
@@ -153,8 +173,9 @@ export class IngestionService {
 
   /** Runs the full pipeline for one document. Never throws; failures are recorded on the document. */
   async process(documentId: string): Promise<void> {
-    const doc = await this.prisma.document.findUnique({ where: { id: documentId } });
+    const doc = await this.prisma.document.findUnique({ where: { id: documentId }, include: { groupAccess: { select: { groupId: true } } } });
     if (!doc) return;
+    const access = toAccessPayload(doc);
     const started = Date.now();
     const claimed = await this.prisma.document.updateMany({ where: { id: documentId }, data: { status: "PROCESSING", error: null } });
     if (claimed.count === 0) return; // deleted in the meantime
@@ -175,7 +196,7 @@ export class IngestionService {
         id: randomUUID(),
         vector: vectors[i] as number[],
         payload: {
-          userId: doc.userId,
+          ...access,
           documentId: doc.id,
           fileName: doc.filename,
           chunkIndex: chunk.index,
@@ -186,7 +207,7 @@ export class IngestionService {
       }));
 
       // Re-indexing: drop the previous generation of vectors first.
-      await this.vectors.deleteByDocument(doc.userId, doc.id);
+      await this.vectors.deleteByDocument(doc.id);
       await this.vectors.upsert(points);
 
       const committed = await this.prisma.$transaction(async (tx) => {
@@ -216,14 +237,19 @@ export class IngestionService {
         return true;
       });
       if (!committed) {
-        await this.vectors.deleteByDocument(doc.userId, doc.id);
+        await this.vectors.deleteByDocument(doc.id);
         return;
+      }
+      // Sharing may have changed while we were embedding: re-sync the payload if so.
+      const now = await this.prisma.document.findUnique({ where: { id: documentId }, include: { groupAccess: { select: { groupId: true } } } });
+      if (now && JSON.stringify(toAccessPayload(now)) !== JSON.stringify(access)) {
+        await this.vectors.setAccess(documentId, toAccessPayload(now));
       }
       this.log.info({ documentId, chunks: chunks.length, ms: Date.now() - started }, "document indexed");
     } catch (err) {
       const message = err instanceof AppError ? err.message : `Indexing failed: ${errorMessage(err)}`;
       this.log.error({ documentId, err: errorMessage(err) }, "document ingestion failed");
-      await this.vectors.deleteByDocument(doc.userId, doc.id).catch(() => {});
+      await this.vectors.deleteByDocument(doc.id).catch(() => {});
       await this.prisma.documentChunk.deleteMany({ where: { documentId } }).catch(() => {});
       await this.prisma.document
         .update({ where: { id: documentId }, data: { status: "FAILED", error: message.slice(0, 500), chunkCount: 0 } })

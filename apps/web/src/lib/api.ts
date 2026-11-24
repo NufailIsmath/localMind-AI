@@ -1,5 +1,9 @@
 import type {
   ApiErrorBody,
+  AuditEventDto,
+  DocumentAccessRequest,
+  GroupDto,
+  UpdateUserAccessRequest,
   AuthResponse,
   ChatRequest,
   ChatStreamEvent,
@@ -43,6 +47,8 @@ export class ApiError extends Error {
   }
 }
 
+export type AdminUserDto = UserDto;
+
 async function request<T>(path: string, init: { method?: string; token?: string | null; json?: unknown; form?: FormData } = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (init.token) headers.authorization = `Bearer ${init.token}`;
@@ -78,13 +84,28 @@ export const api = {
   conversation: (token: string, id: string) => request<ConversationDto>(`/api/chat/${id}`, { token }),
   deleteConversation: (token: string, id: string) => request<void>(`/api/chat/${id}`, { method: "DELETE", token }),
   documents: (token: string) => request<DocumentDto[]>("/api/documents", { token }),
-  upload: (token: string, file: File) => {
+  upload: (token: string, file: File, sharing: DocumentAccessRequest = {}) => {
     const form = new FormData();
+    if (sharing.visibility) form.append("visibility", sharing.visibility);
+    if (sharing.classification) form.append("classification", sharing.classification);
+    for (const g of sharing.groupIds ?? []) form.append("groupIds", g);
     form.append("file", file);
     return request<DocumentDto>("/api/documents/upload", { method: "POST", token, form });
   },
   deleteDocument: (token: string, id: string) => request<void>(`/api/documents/${id}`, { method: "DELETE", token }),
   reindexDocument: (token: string, id: string) => request<DocumentDto>(`/api/documents/${id}/reindex`, { method: "POST", token }),
+  updateDocumentAccess: (token: string, id: string, body: DocumentAccessRequest) =>
+    request<DocumentDto>(`/api/documents/${id}/access`, { method: "PATCH", token, json: body }),
+  admin: {
+    users: (token: string) => request<AdminUserDto[]>("/api/admin/users", { token }),
+    updateUser: (token: string, id: string, body: UpdateUserAccessRequest) =>
+      request<AdminUserDto>(`/api/admin/users/${id}`, { method: "PATCH", token, json: body }),
+    groups: (token: string) => request<GroupDto[]>("/api/admin/groups", { token }),
+    createGroup: (token: string, name: string, description?: string) =>
+      request<GroupDto>("/api/admin/groups", { method: "POST", token, json: { name, description } }),
+    deleteGroup: (token: string, id: string) => request<void>(`/api/admin/groups/${id}`, { method: "DELETE", token }),
+    audit: (token: string) => request<AuditEventDto[]>("/api/admin/audit?limit=100", { token }),
+  },
   tools: (token: string) => request<ToolInfoDto[]>("/api/tools", { token }),
 };
 

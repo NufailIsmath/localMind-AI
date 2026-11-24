@@ -33,6 +33,7 @@ import { extractDocument } from "../src/rag/extraction.service.js";
 import { InMemoryVectorStore } from "../src/rag/memory-vector.store.js";
 import { RetrievalService, type RetrievedChunk } from "../src/rag/retrieval.service.js";
 import { HashEmbeddingService } from "../test/helpers/hash-embeddings.js";
+import { principal, privateAccess } from "../test/helpers/access.js";
 
 interface Question {
   id: string;
@@ -122,7 +123,7 @@ async function main() {
         chunks.map((c, i) => ({
           id: `${d}-${c.index}`,
           vector: vectors[i]!,
-          payload: { userId: USER, documentId: String(d), fileName: doc.name, chunkIndex: c.index, content: c.content, pageStart: c.pageStart, pageEnd: c.pageEnd },
+          payload: { ...privateAccess(USER), documentId: String(d), fileName: doc.name, chunkIndex: c.index, content: c.content, pageStart: c.pageStart, pageEnd: c.pageEnd },
         })),
       );
       chunkCount += chunks.length;
@@ -132,7 +133,7 @@ async function main() {
 
     const results: QuestionResult[] = [];
     for (const q of questions) {
-      const hits = await retrieval.retrieve(USER, q.question);
+      const hits = await retrieval.retrieve(principal(USER), q.question);
       const rankIdx = hits.findIndex((h) => isRelevant(q, h));
       const result: QuestionResult = {
         id: q.id,

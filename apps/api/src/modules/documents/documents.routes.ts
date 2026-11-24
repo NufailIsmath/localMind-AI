@@ -1,10 +1,13 @@
 import type { FastifyPluginAsync } from "fastify";
-import type { Document } from "@prisma/client";
+import type { MultipartFile } from "@fastify/multipart";
+import { z } from "zod";
 import type { DocumentDto } from "@localmind/shared";
-import { AppError, badRequest, notFound } from "../../lib/errors.js";
+import { AppError, badRequest } from "../../lib/errors.js";
 import { UuidParam, parse } from "../../lib/validation.js";
+import { CLASSIFICATIONS, VISIBILITIES, type AccessPrincipal } from "../access/access.policy.js";
+import { DOCUMENT_INCLUDE, type DocumentWithAccess } from "../access/access.service.js";
 
-export function toDocumentDto(d: Document): DocumentDto {
+export function toDocumentDto(d: DocumentWithAccess, viewer: AccessPrincipal): DocumentDto {
   return {
     id: d.id,
     filename: d.filename,
@@ -16,55 +19,102 @@ export function toDocumentDto(d: Document): DocumentDto {
     chunkCount: d.chunkCount,
     uploadedAt: d.uploadedAt.toISOString(),
     indexedAt: d.indexedAt?.toISOString() ?? null,
+    visibility: d.visibility,
+    classification: d.classification,
+    groups: d.groupAccess.map((g) => g.group),
+    owned: d.userId === viewer.userId,
+    ownerEmail: d.user.email,
   };
+}
+
+const SharingSchema = z.object({
+  visibility: z.enum(VISIBILITIES).optional(),
+  classification: z.enum(CLASSIFICATIONS).optional(),
+  groupIds: z.array(z.uuid()).max(50).optional(),
+});
+
+/** Multipart text fields → sharing input (`groupIds` may be repeated or comma-separated). */
+function sharingFromFields(fields: Record<string, string[]>) {
+  const one = (k: string) => fields[k]?.[0]?.trim() || undefined;
+  const groupIds = (fields.groupIds ?? []).flatMap((v) => v.split(",")).map((s) => s.trim()).filter(Boolean);
+  return parse(SharingSchema, {
+    visibility: one("visibility"),
+    classification: one("classification"),
+    groupIds: groupIds.length ? groupIds : undefined,
+  });
 }
 
 export const documentRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
-  const { prisma, ingestion } = app.services;
+  const { ingestion, access, prisma } = app.services;
+  // Re-read after a change; callers have already authorised the request.
+  const reload = (id: string) => prisma.document.findUniqueOrThrow({ where: { id }, include: DOCUMENT_INCLUDE });
 
+  /**
+   * multipart/form-data with a `file` part and optional `visibility`,
+   * `classification` and `groupIds` fields (in any order).
+   */
   app.post("/upload", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!req.isMultipart()) throw badRequest("Expected multipart/form-data with a 'file' field");
-    const file = await req.file();
-    if (!file) throw badRequest("No file uploaded");
-    if (file.fieldname !== "file") throw badRequest("The upload field must be named 'file'");
-    let bytes: Buffer;
+    const fields: Record<string, string[]> = {};
+    let file: { filename: string; bytes: Buffer } | undefined;
     try {
-      bytes = await file.toBuffer();
+      for await (const part of req.parts()) {
+        if (part.type === "file") {
+          if (part.fieldname !== "file" || file) {
+            await (part as MultipartFile).toBuffer(); // drain
+            throw badRequest("Upload exactly one file in a field named 'file'");
+          }
+          file = { filename: part.filename, bytes: await part.toBuffer() };
+        } else if (typeof part.value === "string") {
+          (fields[part.fieldname] ??= []).push(part.value);
+        }
+      }
     } catch (err) {
       if ((err as { code?: string }).code === "FST_REQ_FILE_TOO_LARGE") {
         throw new AppError(413, "PAYLOAD_TOO_LARGE", "File is too large");
       }
       throw err;
     }
-    const doc = await ingestion.upload(req.currentUser.id, file.filename, bytes);
-    return reply.code(202).send(toDocumentDto(doc));
+    if (!file) throw badRequest("No file uploaded");
+
+    const sharing = await access.validateSharing(req.principal, sharingFromFields(fields));
+    const doc = await ingestion.upload(req.principal.userId, file.filename, file.bytes, sharing);
+    if (sharing.visibility !== "PRIVATE") {
+      await access.audit(req.principal.userId, "document.shared", "document", doc.id, { filename: doc.filename, ...sharing });
+    }
+    return reply.code(202).send(toDocumentDto(await reload(doc.id), req.principal));
   });
 
-  app.get("/", async (req) => {
-    const docs = await prisma.document.findMany({
-      where: { userId: req.currentUser.id },
-      orderBy: { uploadedAt: "desc" },
-    });
-    return docs.map(toDocumentDto);
-  });
+  /** Your documents plus everything shared with you that your clearance allows. */
+  app.get("/", async (req) => (await access.listReadable(req.principal)).map((d) => toDocumentDto(d, req.principal)));
 
   app.get("/:id", async (req) => {
     const { id } = parse(UuidParam, req.params);
-    const doc = await prisma.document.findFirst({ where: { id, userId: req.currentUser.id } });
-    if (!doc) throw notFound("Document not found");
-    return toDocumentDto(doc);
+    return toDocumentDto(await access.requireReadable(req.principal, id), req.principal);
+  });
+
+  /** Change visibility, classification or groups (owner or admin). */
+  app.patch("/:id/access", async (req) => {
+    const { id } = parse(UuidParam, req.params);
+    const body = parse(SharingSchema, req.body ?? {});
+    return toDocumentDto(await access.updateDocumentAccess(req.principal, id, body), req.principal);
   });
 
   app.post("/:id/reindex", async (req, reply) => {
     const { id } = parse(UuidParam, req.params);
-    const doc = await ingestion.reindex(req.currentUser.id, id);
-    return reply.code(202).send(toDocumentDto(doc));
+    await access.requireManageable(req.principal, id);
+    await ingestion.reindex(id);
+    return reply.code(202).send(toDocumentDto(await reload(id), req.principal));
   });
 
   app.delete("/:id", async (req, reply) => {
     const { id } = parse(UuidParam, req.params);
-    await ingestion.remove(req.currentUser.id, id);
+    const doc = await access.requireManageable(req.principal, id);
+    await ingestion.remove(id);
+    if (doc.userId !== req.principal.userId) {
+      await access.audit(req.principal.userId, "document.deleted_by_admin", "document", id, { filename: doc.filename, owner: doc.user.email });
+    }
     return reply.code(204).send();
   });
 };

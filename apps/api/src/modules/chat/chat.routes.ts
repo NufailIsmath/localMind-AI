@@ -26,7 +26,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
     });
     try {
       return await app.services.orchestrator.run({
-        user: { id: req.currentUser.id, role: req.currentUser.role },
+        user: req.principal,
         conversationId: body.conversationId,
         message: body.message,
         signal: controller.signal,
@@ -66,7 +66,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
 
     try {
       await app.services.orchestrator.run({
-        user: { id: req.currentUser.id, role: req.currentUser.role },
+        user: req.principal,
         conversationId: body.conversationId,
         message: body.message,
         signal: controller.signal,

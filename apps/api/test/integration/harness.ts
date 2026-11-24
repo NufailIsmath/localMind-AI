@@ -16,7 +16,7 @@ export interface Harness {
   fake: FakeOllama;
   collection: string;
   register(email?: string, password?: string): Promise<AuthResponse>;
-  upload(token: string, filename: string, content: Buffer | string): Promise<{ status: number; body: any }>;
+  upload(token: string, filename: string, content: Buffer | string, fields?: Record<string, string>): Promise<{ status: number; body: any }>;
   waitForIndexing(): Promise<void>;
   close(): Promise<void>;
 }
@@ -43,7 +43,7 @@ export async function createHarness(env: Record<string, string> = {}, { reset = 
   const app = await buildApp(config, { logger: false });
   await app.services.vectors.ensureCollection();
   if (reset) await app.services.prisma.$executeRawUnsafe(
-    'TRUNCATE "ToolExecution", "Message", "Conversation", "DocumentChunk", "Document", "User" CASCADE',
+    'TRUNCATE "AuditEvent", "DocumentGroupAccess", "GroupMembership", "Group", "ToolExecution", "Message", "Conversation", "DocumentChunk", "Document", "User" CASCADE',
   );
 
   let n = 0;
@@ -56,10 +56,14 @@ export async function createHarness(env: Record<string, string> = {}, { reset = 
       if (res.statusCode !== 201) throw new Error(`register failed: ${res.statusCode} ${res.body}`);
       return res.json<AuthResponse>();
     },
-    async upload(token, filename, content) {
+    async upload(token, filename, content, fields = {}) {
       const boundary = `----localmind${randomUUID()}`;
       const bytes = typeof content === "string" ? Buffer.from(content) : content;
+      const fieldParts = Object.entries(fields).map(([k, v]) =>
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`),
+      );
       const payload = Buffer.concat([
+        ...fieldParts,
         Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`),
         bytes,
         Buffer.from(`\r\n--${boundary}--\r\n`),

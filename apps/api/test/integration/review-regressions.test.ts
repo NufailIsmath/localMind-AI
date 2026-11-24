@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ChatResponse, DocumentDto } from "@localmind/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { principal, privateAccess } from "../helpers/access.js";
 import { auth, createHarness, infraReady, type Harness } from "./harness.js";
 
 /** Regression tests for issues found in code review. */
@@ -40,7 +41,7 @@ describe.runIf(infraReady)("review regressions", () => {
     await h.waitForIndexing();
     expect(await qdrantCount(id)).toBe(0);
     expect(await h.app.services.prisma.document.findUnique({ where: { id } })).toBeNull();
-    expect(await h.app.services.retrieval.retrieve(userId, "zebras")).toEqual([]);
+    expect(await h.app.services.retrieval.retrieve(principal(userId), "zebras")).toEqual([]);
   });
 
   it("on restart, interrupted PROCESSING documents are failed (no crash loop) and PENDING ones re-queued", async () => {
@@ -72,11 +73,11 @@ describe.runIf(infraReady)("review regressions", () => {
       {
         id: randomUUID(),
         vector,
-        payload: { userId, documentId: ghost, fileName: "ghost.txt", chunkIndex: 0, content: "orphaned walrus facts", pageStart: null, pageEnd: null },
+        payload: { ...privateAccess(userId), documentId: ghost, fileName: "ghost.txt", chunkIndex: 0, content: "orphaned walrus facts", pageStart: null, pageEnd: null },
       },
     ]);
     expect(await qdrantCount(ghost)).toBe(1);
-    expect(await h.app.services.retrieval.retrieve(userId, "orphaned walrus facts")).toEqual([]);
+    expect(await h.app.services.retrieval.retrieve(principal(userId), "orphaned walrus facts")).toEqual([]);
   });
 
   it("accepts messages containing NUL characters instead of failing with 500", async () => {

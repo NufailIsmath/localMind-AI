@@ -84,6 +84,17 @@ model output ──► name registered? ──► role allowed? ──► Zod pa
 Every outcome is returned to the model as data (so it can recover) and written to `ToolExecution`.
 `ToolContext` carries `userId`, `userRole`, `conversationId` and an `AbortSignal`; arguments never carry identity.
 
+## Access control
+
+Policy (`modules/access/access.policy.ts`): owner, **or** ORGANIZATION + classification ≤ clearance, **or** GROUPS ∩ user's groups ≠ ∅ + classification ≤ clearance.
+
+- **Principal.** `{ userId, role, clearance, groupIds }`, loaded from PostgreSQL on every authenticated request. Nothing about access is baked into the JWT, so changes apply immediately.
+- **Vector payload.** Each chunk carries `userId`, `visibility`, `classification`, `classificationLevel` (integer, range-filterable) and `groupIds`, all keyword/integer indexed. The Qdrant filter is a `should` of three clauses: owner, org + level, groups + level.
+- **Two layers.** Qdrant filters inside the similarity search, so restricted chunks don't consume top-k slots. `RetrievalService` then re-checks every hit's document against PostgreSQL. A restriction is written to PostgreSQL first and enforced at once, even if the Qdrant payload update lags or fails. Widening access only takes effect once the payload sync succeeds, so failures fail closed.
+- **Ingestion.** The payload is built from the document's sharing settings at indexing time. If sharing changes while embedding is in progress, the job re-syncs after committing.
+- **Group deletion** cascades `DocumentGroupAccess` rows, and the affected documents' payloads are re-synced.
+- **Audit.** `AuditEvent` records sharing at upload, access changes, admin deletions, group create/delete, and user role/clearance/membership changes.
+
 ## Data model
 
 See `prisma/schema.prisma`. PostgreSQL is the system of record; Qdrant holds chunk text + vectors with a payload

@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { defineTool } from "../tool.types.js";
+import { accessibleDocumentsWhere } from "../../access/access.policy.js";
 
 /**
  * Read-only PostgreSQL tools. The model chooses *which* predefined query to run
@@ -11,21 +12,35 @@ export const listDocumentsTool = (prisma: PrismaClient) =>
   defineTool({
     name: "list_documents",
     description:
-      "List the documents the user has uploaded, with their indexing status, page and chunk counts and upload dates.",
+      "List the documents the user can access — their own uploads and documents shared with them — with indexing " +
+      "status, classification, page and chunk counts and upload dates.",
     schema: z.object({
       status: z.enum(["PENDING", "PROCESSING", "READY", "FAILED"]).optional().describe("Only return documents in this status"),
       limit: z.number().int().min(1).max(50).optional().describe("Maximum number of documents (default 20)"),
     }),
     async execute({ status, limit }, ctx) {
       const docs = await prisma.document.findMany({
-        where: { userId: ctx.userId, ...(status ? { status } : {}) },
+        where: { AND: [accessibleDocumentsWhere(ctx.principal), ...(status ? [{ status }] : [])] },
         orderBy: { uploadedAt: "desc" },
         take: limit ?? 20,
-        select: { filename: true, status: true, pageCount: true, chunkCount: true, sizeBytes: true, uploadedAt: true },
+        select: {
+          userId: true,
+          filename: true,
+          status: true,
+          classification: true,
+          pageCount: true,
+          chunkCount: true,
+          sizeBytes: true,
+          uploadedAt: true,
+        },
       });
       return {
         count: docs.length,
-        documents: docs.map((d) => ({ ...d, uploadedAt: d.uploadedAt.toISOString() })),
+        documents: docs.map(({ userId, ...d }) => ({
+          ...d,
+          ownership: userId === ctx.userId ? "uploaded by you" : "shared with you",
+          uploadedAt: d.uploadedAt.toISOString(),
+        })),
       };
     },
   });

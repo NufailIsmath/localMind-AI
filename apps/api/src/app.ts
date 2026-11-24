@@ -8,18 +8,16 @@ import type { ApiErrorBody } from "@localmind/shared";
 import type { AppConfig } from "./config/env.js";
 import { createServices, type ServiceOverrides, type Services } from "./container.js";
 import { AppError, UpstreamError, unauthorized } from "./lib/errors.js";
+import type { AccessPrincipal } from "./modules/access/access.policy.js";
+import { toPrincipal, type UserProfile } from "./modules/access/access.service.js";
+import { adminRoutes } from "./modules/admin/admin.routes.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { chatRoutes } from "./modules/chat/chat.routes.js";
 import { documentRoutes } from "./modules/documents/documents.routes.js";
 import { healthRoutes } from "./modules/health/health.routes.js";
 import { toolRoutes } from "./modules/tools/tools.routes.js";
 
-export interface CurrentUser {
-  id: string;
-  email: string;
-  role: "USER" | "ADMIN";
-  createdAt: Date;
-}
+export type CurrentUser = UserProfile;
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -28,6 +26,8 @@ declare module "fastify" {
   }
   interface FastifyRequest {
     currentUser: CurrentUser;
+    /** Identity used for every access decision (documents, retrieval, tools). */
+    principal: AccessPrincipal;
   }
 }
 
@@ -60,11 +60,12 @@ export async function buildApp(config: AppConfig, opts: BuildAppOptions = {}): P
   const services = createServices(config, app.log, opts.overrides);
   app.decorate("services", services);
   app.decorateRequest("currentUser", null as unknown as CurrentUser);
+  app.decorateRequest("principal", null as unknown as AccessPrincipal);
 
   await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } });
   await app.register(cors, {
     origin: config.corsOrigins,
-    methods: ["GET", "POST", "DELETE"],
+    methods: ["GET", "POST", "PATCH", "DELETE"],
     allowedHeaders: ["authorization", "content-type"],
     maxAge: 600,
   });
@@ -81,10 +82,12 @@ export async function buildApp(config: AppConfig, opts: BuildAppOptions = {}): P
     } catch {
       throw unauthorized("Invalid or expired token");
     }
-    // Look the user up on every request so deleted users and role changes take effect immediately.
-    const user = await services.auth.findById(req.user.sub);
+    // Look the user up on every request so deletions, role, clearance and
+    // group changes take effect immediately (they are not baked into the JWT).
+    const user = await services.access.loadProfile(req.user.sub);
     if (!user) throw unauthorized("Account no longer exists");
     req.currentUser = user;
+    req.principal = toPrincipal(user);
   });
 
   app.setErrorHandler((err, req, reply) => {
@@ -117,6 +120,7 @@ export async function buildApp(config: AppConfig, opts: BuildAppOptions = {}): P
   await app.register(chatRoutes, { prefix: "/api/chat" });
   await app.register(documentRoutes, { prefix: "/api/documents" });
   await app.register(toolRoutes, { prefix: "/api/tools" });
+  await app.register(adminRoutes, { prefix: "/api/admin" });
 
   app.addHook("onClose", async () => {
     await services.ingestion.onIdle();

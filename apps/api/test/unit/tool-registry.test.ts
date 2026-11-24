@@ -8,6 +8,7 @@ import { getCurrentTimeTool } from "../../src/modules/tools/tools/time.tool.js";
 const ctx = (over: Partial<ToolContext> = {}): ToolContext => ({
   userId: "user-1",
   userRole: "USER",
+  principal: { userId: "user-1", role: over.userRole ?? "USER", clearance: "INTERNAL", groupIds: [] },
   conversationId: "conv-1",
   signal: new AbortController().signal,
   addSources: () => [],
