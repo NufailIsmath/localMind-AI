@@ -76,7 +76,7 @@ export const api = {
   register: (email: string, password: string) => request<AuthResponse>("/api/auth/register", { method: "POST", json: { email, password } }),
   login: (email: string, password: string) => request<AuthResponse>("/api/auth/login", { method: "POST", json: { email, password } }),
   me: (token: string) => request<UserDto>("/api/auth/me", { token }),
-  health: () => request<HealthDto>("/api/health").catch((e: ApiError) => {
+  health: (token?: string | null) => request<HealthDto>("/api/health", { token }).catch((e: ApiError) => {
     // 503 still carries a useful body; surface network errors as degraded.
     if (e.status === 0) return { status: "degraded", checks: { api: { ok: false, detail: e.message } } } satisfies HealthDto;
     throw e;
@@ -97,6 +97,8 @@ export const api = {
   reindexDocument: (token: string, id: string) => request<DocumentDto>(`/api/documents/${id}/reindex`, { method: "POST", token }),
   updateDocumentAccess: (token: string, id: string, body: DocumentAccessRequest) =>
     request<DocumentDto>(`/api/documents/${id}/access`, { method: "PATCH", token, json: body }),
+  dismissSuggestion: (token: string, id: string) =>
+    request<DocumentDto>(`/api/documents/${id}/suggestion/dismiss`, { method: "POST", token }),
   revokeGrant: (token: string, documentId: string, userId: string) =>
     request<void>(`/api/documents/${documentId}/grants/${userId}`, { method: "DELETE", token }),
   accessRequests: {
@@ -108,6 +110,8 @@ export const api = {
   },
   admin: {
     users: (token: string) => request<AdminUserDto[]>("/api/admin/users", { token }),
+    createUser: (token: string, body: { email: string; password: string; clearance?: string; groupIds?: string[] }) =>
+      request<AdminUserDto>("/api/admin/users", { method: "POST", token, json: body }),
     updateUser: (token: string, id: string, body: UpdateUserAccessRequest) =>
       request<AdminUserDto>(`/api/admin/users/${id}`, { method: "PATCH", token, json: body }),
     groups: (token: string) => request<GroupDto[]>("/api/admin/groups", { token }),

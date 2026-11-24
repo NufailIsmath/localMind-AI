@@ -24,7 +24,8 @@ export class OllamaLlmService implements LlmService {
       model: this.opts.model,
       messages: request.messages.map(toOllamaMessage),
       think: this.opts.think,
-      options: { temperature: this.opts.temperature, num_ctx: this.opts.numCtx },
+      options: { temperature: request.format ? 0 : this.opts.temperature, num_ctx: this.opts.numCtx },
+      ...(request.format ? { format: request.format } : {}),
     };
     if (request.tools?.length) {
       body.tools = request.tools.map((t) => ({

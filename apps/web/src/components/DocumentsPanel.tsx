@@ -3,7 +3,7 @@
 import type { DocumentAccessRequest, DocumentDto, GroupRefDto, UserDto } from "@localmind/shared";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { api, ApiError } from "@/lib/api";
-import { formatBytes, relativeTime } from "@/lib/format";
+import { CLASSIFICATION_LABELS, formatBytes, relativeTime } from "@/lib/format";
 import { ClassificationBadge, VisibilityLabel } from "./AccessBadges";
 import { AccessRequestsInbox } from "./AccessRequestsInbox";
 import { SharingFields } from "./SharingFields";
@@ -232,6 +232,37 @@ export function DocumentsPanel({ token, user, onUnauthorized }: { token: string;
                 {d.status === "READY" ? ` · ${d.chunkCount} chunk${d.chunkCount === 1 ? "" : "s"}` : ""} · {relativeTime(d.uploadedAt)}
               </div>
               {d.error && <div className="doc-error">{d.error}</div>}
+              {d.suggestion && (
+                <div className="suggestion" role="status" data-testid="classification-suggestion">
+                  <div>
+                    💡 This looks <strong>{CLASSIFICATION_LABELS[d.suggestion.classification]}</strong>
+                    {d.suggestion.reasons.length > 0 && <span>: {d.suggestion.reasons.join("; ").toLowerCase()}</span>}
+                  </div>
+                  <div className="doc-actions">
+                    <button
+                      type="button"
+                      className="btn-primary btn-sm"
+                      onClick={() => void saveAccess(d, { visibility: d.visibility, classification: d.suggestion!.classification, groupIds: d.groups.map((g) => g.id) })}
+                    >
+                      Mark {CLASSIFICATION_LABELS[d.suggestion.classification]}
+                    </button>
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={async () => {
+                        try {
+                          const updated = await api.dismissSuggestion(token, d.id);
+                          setDocs((all) => all.map((x) => (x.id === d.id ? updated : x)));
+                        } catch (err) {
+                          handle(err);
+                        }
+                      }}
+                    >
+                      Keep {CLASSIFICATION_LABELS[d.classification]}
+                    </button>
+                  </div>
+                </div>
+              )}
               {editing === d.id ? (
                 <AccessEditor
                   doc={d}

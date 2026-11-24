@@ -90,7 +90,7 @@ export function Workspace() {
           </span>
           LocalMind
         </div>
-        <HealthBadge />
+        <HealthBadge token={token} />
         <nav className="mobile-tabs" aria-label="Panels">
           {(["conversations", "chat", "documents"] as const).map((p) => (
             <button key={p} type="button" className={panel === p ? "active" : ""} onClick={() => setPanel(p)}>

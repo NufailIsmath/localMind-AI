@@ -8,7 +8,9 @@ import { JobQueue } from "../lib/job-queue.js";
 import { chunkDocument, type ChunkingOptions } from "./chunking.service.js";
 import { MIME_TYPES, detectKind, extractDocument } from "./extraction.service.js";
 import type { VectorPoint, VectorStore } from "./vector.service.js";
-import { toAccessPayload } from "../modules/access/access.policy.js";
+import { classificationLevel, toAccessPayload } from "../modules/access/access.policy.js";
+import type { ClassificationService } from "./classification.service.js";
+import { Prisma } from "@prisma/client";
 import type { SharingSettings } from "../modules/access/access.service.js";
 
 export interface IngestionOptions extends ChunkingOptions {
@@ -28,7 +30,14 @@ export const MAX_CHUNKS_PER_DOCUMENT = 5000;
 
 export function sanitizeFilename(name: string): string {
   // eslint-disable-next-line no-control-regex
-  const cleaned = basename(name.replace(/\\/g, "/")).replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  // Browsers percent-encode only ", CR and LF in multipart filenames (HTML spec); undo that first.
+  const decoded = name.replace(/%22/gi, '"').replace(/%0D|%0A/gi, "");
+  const cleaned = basename(decoded.replace(/\\/g, "/"))
+    // Control characters, and Unicode bidi/zero-width controls used to disguise
+    // extensions (e.g. "invoice\u202Efdp.exe" displays as "invoiceexe.pdf").
+    .replace(/[\u0000-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g, "")
+    .normalize("NFC")
+    .trim();
   if (!cleaned || cleaned === "." || cleaned === "..") return "document";
   return cleaned.length > MAX_FILENAME ? cleaned.slice(cleaned.length - MAX_FILENAME) : cleaned;
 }
@@ -51,6 +60,7 @@ export class IngestionService {
     private readonly vectors: VectorStore,
     private readonly opts: IngestionOptions,
     private readonly log: IngestionLogger,
+    private readonly classifier?: ClassificationService,
   ) {
     this.uploadDir = resolve(opts.uploadDir);
     this.queue = new JobQueue(opts.concurrency ?? 1, (key, err) =>
@@ -191,7 +201,15 @@ export class IngestionService {
         throw badRequest(`Document is too large to index (${chunks.length} chunks; the limit is ${MAX_CHUNKS_PER_DOCUMENT})`);
       }
 
+      // Classify while embedding; a failed suggestion must never block indexing.
+      const suggestionP = this.classifier
+        ? this.classifier.suggest(doc.filename, extracted.pages.map((p) => p.text).join("\n\n")).catch((err) => {
+            this.log.error({ documentId, err: errorMessage(err) }, "classification suggestion failed");
+            return null;
+          })
+        : Promise.resolve(null);
       const vectors = await this.embeddings.embedDocuments(chunks.map((c) => c.content));
+      const suggestion = await suggestionP;
       const points: VectorPoint[] = chunks.map((chunk, i) => ({
         id: randomUUID(),
         vector: vectors[i] as number[],
@@ -211,7 +229,7 @@ export class IngestionService {
       await this.vectors.upsert(points);
 
       const committed = await this.prisma.$transaction(async (tx) => {
-        const still = await tx.document.findUnique({ where: { id: documentId }, select: { id: true } });
+        const still = await tx.document.findUnique({ where: { id: documentId }, select: { id: true, classification: true } });
         if (!still) return false; // deleted while we were working
         await tx.documentChunk.deleteMany({ where: { documentId } });
         await tx.documentChunk.createMany({
@@ -232,6 +250,10 @@ export class IngestionService {
             pageCount: extracted.pageCount,
             embeddingModel: this.embeddings.model,
             indexedAt: new Date(),
+            // Kept only when it would RAISE the current label; suggestions never lower one.
+            ...(suggestion && classificationLevel(suggestion.level) > classificationLevel(still.classification)
+              ? { suggestedClassification: suggestion.level, suggestionReasons: suggestion.reasons as Prisma.InputJsonValue }
+              : { suggestedClassification: null, suggestionReasons: Prisma.DbNull }),
           },
         });
         return true;

@@ -14,6 +14,7 @@ import {
   stripCitations,
 } from "./prompt.service.js";
 import type { ChatMessage, LlmService, ToolCall } from "./types.js";
+import { detectInjection } from "../rag/injection-detector.js";
 
 export interface OrchestratorOptions {
   maxToolRounds: number;
@@ -77,6 +78,7 @@ class SourceCollector {
           classification: c.classification,
           shared: c.shared,
           score: Number(c.score.toFixed(4)),
+          injectionFlags: detectInjection(c.content),
           excerpt: bestExcerpt(c.content, query),
         };
         this.byChunk.set(key, source);
@@ -91,6 +93,10 @@ class SourceCollector {
    * Sources cited in the answer, falling back to everything retrieved when the
    * model did not use citation markers.
    */
+  flagged(): Source[] {
+    return [...this.byChunk.values()].filter((s) => s.injectionFlags.length > 0);
+  }
+
   forAnswer(answer: string): Source[] {
     const all = [...this.byChunk.values()];
     const cited = new Set([...answer.matchAll(/\[(S\d+)\]/g)].map((m) => m[1]));
@@ -146,6 +152,8 @@ export class Orchestrator {
     private readonly repo: ChatRepository,
     private readonly opts: OrchestratorOptions,
     private readonly log: OrchestratorLogger,
+    /** Called when retrieved passages look like prompt-injection attempts (for auditing). */
+    private readonly onInjectionDetected?: (e: { userId: string; conversationId: string; documentId: string; flags: string[] }) => Promise<void>,
   ) {}
 
   async run(input: ChatTurnInput): Promise<ChatResponse> {
@@ -215,6 +223,10 @@ export class Orchestrator {
     if (!answer) answer = "I wasn't able to produce an answer. Please try rephrasing your question.";
 
     const answerSources = sources.forAnswer(answer);
+    for (const s of sources.flagged()) {
+      this.log.warn({ conversationId: conversation.id, documentId: s.documentId, flags: s.injectionFlags }, "possible prompt injection in retrieved passage");
+      await this.onInjectionDetected?.({ userId: user.userId, conversationId: conversation.id, documentId: s.documentId, flags: s.injectionFlags }).catch(() => {});
+    }
     const notices = restricted.all();
     const messageId = await this.repo.addAssistantMessage(conversation.id, answer, answerSources, notices);
     await this.repo.linkToolExecutions(executions.map((e) => e.id), messageId);

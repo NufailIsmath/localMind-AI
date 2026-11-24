@@ -207,6 +207,10 @@ model Document {
   status         DocumentStatus     @default(PENDING)
   visibility     DocumentVisibility @default(PRIVATE)
   classification Classification     @default(INTERNAL)
+  /// Classification suggested by the classifier after indexing (only kept when higher than `classification`)
+  suggestedClassification Classification?
+  /// Human-readable reasons for the suggestion
+  suggestionReasons       Json?
   error          String?
   pageCount      Int?
   chunkCount     Int                @default(0)

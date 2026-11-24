@@ -1,4 +1,4 @@
-import type { Classification, DocumentVisibility, Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type Classification, type DocumentVisibility, type PrismaClient } from "@prisma/client";
 import { badRequest, conflict, errorMessage, forbidden, notFound } from "../../lib/errors.js";
 import type { VectorStore } from "../../rag/vector.service.js";
 import type { WithheldMatch } from "../../rag/retrieval.service.js";
@@ -49,11 +49,34 @@ export const toPrincipal = (u: UserProfile): AccessPrincipal => ({
 });
 
 export class AccessService {
+  /** userId → timestamps of recent "that's confidential" notices (per-process sliding window). */
+  private readonly noticeLog = new Map<string, number[]>();
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly vectors: VectorStore,
     private readonly log: AccessLogger,
+    private readonly opts: { noticeHourlyLimit: number } = { noticeHourlyLimit: 30 },
   ) {}
+
+  /**
+   * Caps how many restricted-content notices a user gets per hour. Each notice
+   * reveals that *something* sensitive matched; the cap turns systematic
+   * probing ("is there a doc about layoffs? about the merger?…") into a slow,
+   * audited trickle. Past the cap the assistant behaves as in silent mode.
+   */
+  private takeNoticeBudget(userId: string, wanted: number): number {
+    const now = Date.now();
+    const recent = (this.noticeLog.get(userId) ?? []).filter((t) => now - t < 3_600_000);
+    const allowed = Math.max(0, Math.min(wanted, this.opts.noticeHourlyLimit - recent.length));
+    for (let i = 0; i < allowed; i++) recent.push(now);
+    this.noticeLog.set(userId, recent);
+    if (allowed < wanted && recent.length >= this.opts.noticeHourlyLimit) {
+      this.log.warn({ userId }, "restricted-notice limit reached; possible probing");
+      void this.audit(userId, "security.notice_limit_reached", "user", userId, { limit: this.opts.noticeHourlyLimit }).catch(() => {});
+    }
+    return allowed;
+  }
 
   // ---------- identity ----------
 
@@ -159,9 +182,16 @@ export class AccessService {
       if (next.groupIds.length) {
         await tx.documentGroupAccess.createMany({ data: next.groupIds.map((groupId) => ({ documentId, groupId })) });
       }
+      // A suggestion is settled once the label is at least as high as suggested.
+      const settled =
+        doc.suggestedClassification && classificationLevel(next.classification) >= classificationLevel(doc.suggestedClassification);
       const d = await tx.document.update({
         where: { id: documentId },
-        data: { visibility: next.visibility, classification: next.classification },
+        data: {
+          visibility: next.visibility,
+          classification: next.classification,
+          ...(settled ? { suggestedClassification: null, suggestionReasons: Prisma.DbNull } : {}),
+        },
         include: DOCUMENT_INCLUDE,
       });
       await tx.auditEvent.create({
@@ -216,7 +246,25 @@ export class AccessService {
       });
       if (out.length >= MAX_NOTICES) break;
     }
-    return out;
+    return out.length ? out.slice(0, this.takeNoticeBudget(p.userId, out.length)) : out;
+  }
+
+  /** "Keep my label": dismisses a classification suggestion (owner or admin). */
+  async dismissSuggestion(actor: AccessPrincipal, documentId: string): Promise<DocumentWithAccess> {
+    const doc = await this.requireManageable(actor, documentId);
+    if (!doc.suggestedClassification) return doc;
+    const updated = await this.prisma.document.update({
+      where: { id: documentId },
+      data: { suggestedClassification: null, suggestionReasons: Prisma.DbNull },
+      include: DOCUMENT_INCLUDE,
+    });
+    await this.audit(actor.userId, "document.classification_suggestion.dismissed", "document", documentId, {
+      filename: doc.filename,
+      kept: doc.classification,
+      suggested: doc.suggestedClassification,
+      reasons: doc.suggestionReasons,
+    });
+    return updated;
   }
 
   /** Revokes an individual grant (owner or admin). */

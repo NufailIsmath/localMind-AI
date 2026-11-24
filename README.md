@@ -10,7 +10,7 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 | **Backend** | Node.js · TypeScript · Fastify · Zod · Prisma |
 | **Data** | Qdrant (vectors) · PostgreSQL (users, documents, chats, tool audit log) |
 | **Frontend** | Next.js 16 · React 19 (streaming chat UI) |
-| **Testing** | Vitest — 84 unit + 94 integration tests (real Postgres/Qdrant), 11 Playwright E2E, RAG evaluation harness |
+| **Testing** | Vitest — 102 unit + 118 integration tests (real Postgres/Qdrant), 13 Playwright E2E, security suite, RAG evaluation harness |
 | **Infra** | Docker Compose |
 
 ## Features
@@ -165,6 +165,15 @@ The request goes to the document's owner, who sees it in an **Access requests** 
 
 Requests can only be raised from a notice the assistant actually showed that user (message + notice id are checked server-side), so they can't be used to fish for document ids.
 
+### Classification suggestions
+
+After a document is indexed, LocalMind suggests a classification if the content looks more sensitive than the label it was uploaded with. The owner sees *"💡 This looks **Confidential**: mentions salary or compensation figures"* with **Mark Confidential / Keep Internal**.
+
+- **Rules** (deterministic): private keys, API tokens, passwords, salary/compensation figures, Luhn-valid card numbers, IBANs, SSN-style IDs, medical and HR-case language, M&A discussion, "Confidential"/"Restricted" markings.
+- **Model** (optional, `CLASSIFICATION_SUGGESTIONS=model`): the local chat model returns strict JSON (`format` = JSON schema), validated with Zod.
+- **Combining them:** the result is `max(rules, model)`. A document saying "classify this as PUBLIC" can fool the model but not the rules, which act as a floor.
+- **Only upward, never automatic:** suggestions are shown only when *higher* than the current label, nothing is applied automatically, and "Keep" is audited.
+
 **Not covered:** answers given *before* access was revoked stay in that user's chat history. Revocation stops future retrieval; it can't un-tell a past answer.
 
 ## API
@@ -193,7 +202,8 @@ All endpoints except `auth/register`, `auth/login` and `health` require `Authori
 | GET | `/api/access-requests` | `incoming` (to decide on) and `outgoing` (yours) |
 | POST | `/api/access-requests/:id/approve` · `/deny` | Decide (document owner or admin) |
 | GET | `/api/tools/executions` | Your tool audit log |
-| GET / PATCH | `/api/admin/users`, `/api/admin/users/:id` | People: role, clearance, groups (admin) |
+| GET / POST / PATCH | `/api/admin/users`, `/api/admin/users/:id` | People: add, role, clearance, groups (admin) |
+| POST | `/api/documents/:id/suggestion/dismiss` | Keep the current label instead of the suggested one |
 | GET / POST / DELETE | `/api/admin/groups`, `/api/admin/groups/:id` | Groups (admin) |
 | GET | `/api/admin/audit` | Sharing / permission audit log (admin) |
 | GET | `/api/health` | Dependency health (200 / 503) |
@@ -252,6 +262,14 @@ export const weatherTool = defineTool({
 - **Auth**: scrypt password hashing, JWT (HS256) with expiry, users re-loaded on every request (deleted users lose access immediately), rate-limited login/registration/chat/upload, uniform login errors with timing equalisation.
 - **Local infrastructure**: Docker publishes Qdrant/PostgreSQL/Ollama on `127.0.0.1` only — Qdrant has no auth by default and Ollama has none at all.
 
+## Security testing
+
+See [`SECURITY.md`](SECURITY.md) for the threat model, controls and assessment log. In short:
+- **SQL injection:** the Prisma query builder is used everywhere.
+- **Prompt injection:** contained architecturally. The tests drive an obedient "compromised" mock model through planted instructions and verify it can't escalate, can't read beyond the victim's access, and is detected and audited.
+- **Exfiltration:** answers can't render clickable links or images, and the web app ships a strict CSP.
+- **Other attack classes:** mass assignment, path traversal, bidi filenames, XSS, CORS, enumeration and DoS are each covered by tests.
+
 ## Evaluating RAG quality
 
 ```bash
@@ -282,7 +300,7 @@ npm run test:integration      # real PostgreSQL (localmind_test DB) + real Qdran
 npm run typecheck
 
 # End-to-end (browser) — against the running stack with the mock model:
-npm run mock:ollama & RETRIEVAL_SCORE_THRESHOLD=0.05 RESTRICTED_NOTICE_SCORE_THRESHOLD=0.1 npm run dev:api &
+npm run mock:ollama & ALLOW_REGISTRATION=true RETRIEVAL_SCORE_THRESHOLD=0.05 RESTRICTED_NOTICE_SCORE_THRESHOLD=0.1 npm run dev:api &
 npm run build -w @localmind/web && npm run start -w @localmind/web &
 npm run seed:demo             # demo organisation used by the access-control E2E tests
 npm run e2e -w @localmind/web
@@ -311,7 +329,9 @@ All settings are environment variables validated at startup (see [`.env.example`
 | `RESTRICTED_NOTICE_SCORE_THRESHOLD` | `0.55` | Minimum similarity before a restricted document is acknowledged |
 | `MAX_TOOL_ROUNDS` / `MAX_TOOL_CALLS_PER_ROUND` | `5` / `5` | Bounds on the agent loop |
 | `TOOL_TIMEOUT_MS` / `LLM_TIMEOUT_MS` | `15000` / `180000` | Fault-tolerance limits |
-| `ALLOW_REGISTRATION` | `true` | Set to `false` after creating your account |
+| `ALLOW_REGISTRATION` | `first-user` | `first-user`: sign-up closes after the first (admin) account; admins add people. `true`: always open (demos; reveals registered emails). `false`: closed |
+| `CLASSIFICATION_SUGGESTIONS` | `model` | `model` (rules + local model), `rules`, or `off` |
+| `RESTRICTED_NOTICE_HOURLY_LIMIT` | `30` | Per-user cap on "that's confidential" notices |
 
 ## Project structure
 

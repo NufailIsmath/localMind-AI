@@ -14,7 +14,18 @@ const EnvSchema = z
     CORS_ORIGINS: z.string().default("http://localhost:3000"),
     JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
     JWT_EXPIRES_IN: z.string().default("7d"),
-    ALLOW_REGISTRATION: bool.default(true),
+    /**
+     * Self-service sign-up:
+     *   first-user (default): open only until the first (admin) account exists; admins add everyone else.
+     *   true: always open (convenient for demos; reveals whether an email is registered).
+     *   false: closed.
+     */
+    ALLOW_REGISTRATION: z
+      .enum(["true", "false", "1", "0", "first-user"])
+      .default("first-user")
+      .transform((v) => (v === "first-user" ? "first-user" : v === "true" || v === "1" ? "open" : "closed")),
+    /** Per-user hourly cap on "that's confidential" notices (slows probing for what exists). */
+    RESTRICTED_NOTICE_HOURLY_LIMIT: int(30, 0),
     RATE_LIMIT_ENABLED: bool.default(true),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 
@@ -46,6 +57,8 @@ const EnvSchema = z
     ACCESS_DENIAL_MODE: z.enum(["acknowledge", "silent"]).default("acknowledge"),
     /** Minimum similarity before a restricted document is acknowledged (keeps probing imprecise). */
     RESTRICTED_NOTICE_SCORE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
+    /** model: rules + local model; rules: pattern rules only; off: no suggestions. */
+    CLASSIFICATION_SUGGESTIONS: z.enum(["model", "rules", "off"]).default("model"),
     MAX_UPLOAD_MB: z.coerce.number().positive().default(20),
     UPLOAD_DIR: z.string().default("./data/uploads"),
 
@@ -68,7 +81,7 @@ export interface AppConfig {
   corsOrigins: string[];
   logLevel: Env["LOG_LEVEL"];
   rateLimitEnabled: boolean;
-  auth: { jwtSecret: string; jwtExpiresIn: string; allowRegistration: boolean };
+  auth: { jwtSecret: string; jwtExpiresIn: string; registration: "open" | "closed" | "first-user" };
   databaseUrl: string;
   qdrant: { url: string; apiKey?: string; collection: string };
   ollama: {
@@ -89,6 +102,8 @@ export interface AppConfig {
     scoreThreshold: number;
     accessDenialMode: "acknowledge" | "silent";
     restrictedNoticeThreshold: number;
+    restrictedNoticeHourlyLimit: number;
+    classificationSuggestions: "model" | "rules" | "off";
     maxUploadBytes: number;
     uploadDir: string;
   };
@@ -114,7 +129,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     corsOrigins: e.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean),
     logLevel: e.LOG_LEVEL,
     rateLimitEnabled: e.RATE_LIMIT_ENABLED,
-    auth: { jwtSecret: e.JWT_SECRET, jwtExpiresIn: e.JWT_EXPIRES_IN, allowRegistration: e.ALLOW_REGISTRATION },
+    auth: { jwtSecret: e.JWT_SECRET, jwtExpiresIn: e.JWT_EXPIRES_IN, registration: e.ALLOW_REGISTRATION },
     databaseUrl: e.DATABASE_URL,
     qdrant: { url: e.QDRANT_URL, apiKey: e.QDRANT_API_KEY || undefined, collection: e.QDRANT_COLLECTION },
     ollama: {
@@ -135,6 +150,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       scoreThreshold: e.RETRIEVAL_SCORE_THRESHOLD,
       accessDenialMode: e.ACCESS_DENIAL_MODE,
       restrictedNoticeThreshold: e.RESTRICTED_NOTICE_SCORE_THRESHOLD,
+      restrictedNoticeHourlyLimit: e.RESTRICTED_NOTICE_HOURLY_LIMIT,
+      classificationSuggestions: e.CLASSIFICATION_SUGGESTIONS,
       maxUploadBytes: Math.floor(e.MAX_UPLOAD_MB * 1024 * 1024),
       uploadDir: e.UPLOAD_DIR,
     },

@@ -37,8 +37,13 @@ export const healthRoutes: FastifyPluginAsync = async (app) => {
       ),
     ]);
 
-    const checks = { database, qdrant, ollama: llm };
-    const body: HealthDto = { status: Object.values(checks).every((c) => c.ok) ? "ok" : "degraded", checks };
+    // Anonymous callers (monitoring) get up/down only; details (model names, reasons) need a valid token.
+    const authenticated = await _req.jwtVerify().then(() => true, () => false);
+    const all = { database, qdrant, ollama: llm };
+    const checks = authenticated
+      ? all
+      : Object.fromEntries(Object.entries(all).map(([k, c]) => [k, { ok: c.ok }]));
+    const body: HealthDto = { status: Object.values(all).every((c) => c.ok) ? "ok" : "degraded", checks };
     return reply.code(body.status === "ok" ? 200 : 503).send(body);
   });
 };

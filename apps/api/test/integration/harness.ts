@@ -37,6 +37,7 @@ export async function createHarness(env: Record<string, string> = {}, { reset = 
     CHUNK_OVERLAP_TOKENS: "10",
     RETRIEVAL_SCORE_THRESHOLD: "0.15",
     RATE_LIMIT_ENABLED: "false",
+    ALLOW_REGISTRATION: "true",
     LOG_LEVEL: "silent",
     ...env,
   });

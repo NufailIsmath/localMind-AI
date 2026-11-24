@@ -4,18 +4,18 @@ import type { HealthDto } from "@localmind/shared";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
-export function HealthBadge() {
+export function HealthBadge({ token }: { token: string }) {
   const [health, setHealth] = useState<HealthDto | null>(null);
   useEffect(() => {
     let alive = true;
-    const load = () => api.health().then((h) => alive && setHealth(h)).catch(() => {});
+    const load = () => api.health(token).then((h) => alive && setHealth(h)).catch(() => {});
     void load();
     const t = setInterval(load, 30_000);
     return () => {
       alive = false;
       clearInterval(t);
     };
-  }, []);
+  }, [token]);
   if (!health) return null;
   const problems = Object.entries(health.checks).filter(([, c]) => !c.ok);
   const title = Object.entries(health.checks)

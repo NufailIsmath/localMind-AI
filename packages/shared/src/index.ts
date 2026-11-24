@@ -73,6 +73,8 @@ export interface Source {
   /** True when the passage comes from a document another user shared. */
   shared: boolean;
   score: number;
+  /** Why this passage looks like a prompt-injection attempt (empty when it doesn't). */
+  injectionFlags: string[];
   /** A short excerpt of the chunk for display. */
   excerpt: string;
 }
@@ -175,6 +177,8 @@ export interface DocumentDto {
   ownerEmail: string;
   /** People granted access individually (visible to the owner and admins). */
   grants: { id: string; email: string }[];
+  /** "This looks Confidential" — shown to the owner/admins when higher than the current label. */
+  suggestion: { classification: Classification; reasons: string[] } | null;
 }
 
 export interface ToolInfoDto {

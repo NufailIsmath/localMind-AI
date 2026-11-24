@@ -30,7 +30,9 @@ describe("loadConfig", () => {
   it("parses booleans and lists", () => {
     const c = loadConfig({ ...baseEnv, OLLAMA_THINK: "true", ALLOW_REGISTRATION: "0", CORS_ORIGINS: "http://a, http://b" });
     expect(c.ollama.think).toBe(true);
-    expect(c.auth.allowRegistration).toBe(false);
+    expect(c.auth.registration).toBe("closed");
+    expect(loadConfig(baseEnv).auth.registration).toBe("first-user");
+    expect(loadConfig({ ...baseEnv, ALLOW_REGISTRATION: "true" }).auth.registration).toBe("open");
     expect(c.corsOrigins).toEqual(["http://a", "http://b"]);
   });
 });

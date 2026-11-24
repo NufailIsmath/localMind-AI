@@ -212,3 +212,27 @@ describe.runIf(infraReady)("silent mode", () => {
     }
   });
 });
+
+describe.runIf(infraReady)("restricted-notice rate limit", () => {
+  it("goes silent after the hourly cap and audits it", async () => {
+    const h = await createHarness({ RESTRICTED_NOTICE_SCORE_THRESHOLD: "0.2", RESTRICTED_NOTICE_HOURLY_LIMIT: "2" });
+    try {
+      const admin = await h.register("admin@corp.test");
+      const owner = await h.register("owner@corp.test");
+      const prober = await h.register("prober@corp.test");
+      await h.upload(owner.token, "secret.txt", "The CEO salary is 480000 dollars per year.", { visibility: "ORGANIZATION", classification: "RESTRICTED" });
+      await h.waitForIndexing();
+      const ask = async () =>
+        (await h.app.inject({ method: "POST", url: "/api/chat", headers: auth(prober.token), payload: { message: "What is the CEO salary?" } })).json<ChatResponse>();
+      expect((await ask()).restricted).toHaveLength(1);
+      expect((await ask()).restricted).toHaveLength(1);
+      const third = await ask();
+      expect(third.restricted).toEqual([]);
+      expect(third.answer).not.toMatch(/confidential/i);
+      const audit = (await h.app.inject({ method: "GET", url: "/api/admin/audit", headers: auth(admin.token) })).json<{ action: string }[]>();
+      expect(audit.map((e) => e.action)).toContain("security.notice_limit_reached");
+    } finally {
+      await h.close();
+    }
+  });
+});

@@ -13,6 +13,7 @@ import { PrismaChatRepository } from "./modules/chat/chat.repository.js";
 import { createToolRegistry } from "./modules/tools/index.js";
 import type { ToolRegistry } from "./modules/tools/tool.registry.js";
 import { IngestionService } from "./rag/ingestion.service.js";
+import { ClassificationService } from "./rag/classification.service.js";
 import { RetrievalService } from "./rag/retrieval.service.js";
 import { QdrantVectorStore, type VectorStore } from "./rag/vector.service.js";
 
@@ -78,7 +79,7 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
       dimensions: config.ollama.embeddingDimensions,
     });
 
-  const access = new AccessService(prisma, vectors, log);
+  const access = new AccessService(prisma, vectors, log, { noticeHourlyLimit: config.rag.restrictedNoticeHourlyLimit });
   const retrieval = new RetrievalService(
     embeddings,
     vectors,
@@ -100,6 +101,9 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
       maxUploadBytes: config.rag.maxUploadBytes,
     },
     log,
+    config.rag.classificationSuggestions === "off"
+      ? undefined
+      : new ClassificationService(config.rag.classificationSuggestions === "model" ? llm : undefined, log),
   );
   const tools = createToolRegistry({
     prisma,
@@ -109,8 +113,13 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
     onUnexpectedError: (tool, err) => log.error({ tool, err }, "tool failed unexpectedly"),
   });
   const chatRepository = new PrismaChatRepository(prisma);
-  const orchestrator = new Orchestrator(llm, tools, chatRepository, config.orchestrator, log);
-  const auth = new AuthService(prisma, config.auth.allowRegistration);
+  const orchestrator = new Orchestrator(llm, tools, chatRepository, config.orchestrator, log, (e) =>
+    access.audit(e.userId, "security.prompt_injection_detected", "document", e.documentId, {
+      conversationId: e.conversationId,
+      flags: e.flags,
+    }),
+  );
+  const auth = new AuthService(prisma, config.auth.registration);
 
   return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests };
 }

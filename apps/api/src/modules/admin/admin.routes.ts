@@ -22,6 +22,26 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     (await access.listUsers()).map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })),
   );
 
+  /** Add a person (the normal path when self-service sign-up is closed). */
+  app.post("/users", async (req, reply) => {
+    const body = parse(
+      z.object({
+        email: z.email().max(254),
+        password: z.string().min(12, "Temporary password must be at least 12 characters").max(256),
+        role: z.enum(["USER", "ADMIN"]).default("USER"),
+        clearance: z.enum(CLASSIFICATIONS).default("INTERNAL"),
+        groupIds: z.array(z.uuid()).max(100).default([]),
+      }),
+      req.body,
+    );
+    const user = await app.services.auth.createUser(body);
+    await access.audit(req.principal.userId, "user.created", "user", user.id, { email: user.email, role: body.role, clearance: body.clearance });
+    const u = body.groupIds.length
+      ? await access.updateUser(req.principal, user.id, { groupIds: body.groupIds })
+      : (await access.listUsers()).find((x) => x.id === user.id)!;
+    return reply.code(201).send({ ...u, createdAt: u.createdAt.toISOString() });
+  });
+
   app.patch("/users/:id", async (req) => {
     const { id } = parse(UuidParam, req.params);
     const body = parse(

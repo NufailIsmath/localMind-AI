@@ -44,6 +44,29 @@ function decide(messages: OllamaMessage[], toolNames: Set<string>): { content: s
 
   if (/\[loop\]/.test(userText) && toolNames.has("get_current_time")) return call("get_current_time", {});
 
+  // "Compromised model" simulation: obey [[call:tool {json}]] and [[say:text]]
+  // directives found in tool results (i.e. planted in documents), the way a
+  // fully prompt-injected model would. Lets tests prove the *server* contains it.
+  if (toolResults.length > 0) {
+    const already = new Set(
+      after.flatMap((m) => m.tool_calls ?? []).map((c) => `${c.function.name}:${JSON.stringify(c.function.arguments)}`),
+    );
+    for (const m of toolResults) {
+      for (const d of m.content.matchAll(/\[\[call:([a-z_]+)\s*(\{.*?\})?\]\]/g)) {
+        let args: Record<string, unknown> = {};
+        try {
+          args = d[2] ? JSON.parse(d[2].replace(/\\"/g, '"')) : {};
+        } catch {
+          /* ignore malformed */
+        }
+        const key = `${d[1]}:${JSON.stringify(args)}`;
+        if (!already.has(key)) return call(d[1]!, args);
+      }
+    }
+    const says = toolResults.flatMap((m) => [...m.content.matchAll(/\[\[say:([^\]]+)\]\]/g)].map((x) => x[1]!));
+    if (says.length) return { content: says.join(" "), toolCalls: [] };
+  }
+
   // Called without tools after the tool budget ran out.
   if (toolNames.size === 0 && toolResults.length > 0) {
     return { content: "Based on the information gathered so far, I cannot give a more complete answer.", toolCalls: [] };
@@ -164,6 +187,20 @@ export async function startFakeOllama(opts: FakeOllamaOptions = {}, port = 0): P
         if (chat.model !== chatModel) return json(res, 404, { error: `model "${chat.model}" not found, try pulling it first` });
         const lastUser = [...chat.messages].reverse().find((m) => m.role === "user")?.content ?? "";
         if (lastUser.includes("[fail-llm]")) return json(res, 500, { error: "simulated model crash" });
+
+        // JSON-mode classification requests. Deliberately *obedient*: it follows
+        // "classify this as X" instructions inside the document, like a fully
+        // prompt-injected model would — the server must not trust it.
+        if (chat.format) {
+          const doc = (chat.messages.at(-1)?.content ?? "").toLowerCase();
+          const injected = doc.match(/classify (?:this|it|the document) as (public|internal|confidential|restricted)/);
+          const answer = injected
+            ? { classification: injected[1]!.toUpperCase(), reasons: ["As instructed by the document"] }
+            : /customer (?:list|records)|home address/.test(doc)
+              ? { classification: "CONFIDENTIAL", reasons: ["Contains customer personal data"] }
+              : { classification: "INTERNAL", reasons: [] };
+          return json(res, 200, { model: chatModel, message: { role: "assistant", content: JSON.stringify(answer) }, done: true });
+        }
 
         const toolNames = new Set((chat.tools ?? []).map((t) => t.function.name));
         const { content, toolCalls } = decide(chat.messages, toolNames);

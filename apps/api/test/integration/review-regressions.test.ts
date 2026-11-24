@@ -104,7 +104,8 @@ describe.runIf(infraReady)("review regressions", () => {
   it("does not expose internal hostnames from the unauthenticated health endpoint", async () => {
     const down = await createHarness({ OLLAMA_HOST: "http://127.0.0.1:1" }, { reset: false });
     try {
-      const body = (await down.app.inject({ method: "GET", url: "/api/health" })).json();
+      const { token } = await down.register();
+      const body = (await down.app.inject({ method: "GET", url: "/api/health", headers: auth(token) })).json();
       expect(body.checks.ollama).toEqual({ ok: false, detail: "cannot reach Ollama" });
       expect(JSON.stringify(body)).not.toContain("127.0.0.1");
     } finally {

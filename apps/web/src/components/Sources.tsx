@@ -24,6 +24,11 @@ export function Sources({ sources, highlighted, idPrefix }: { sources: Source[];
                 {(s.score * 100).toFixed(0)}%
               </span>
             </div>
+            {s.injectionFlags?.length > 0 && (
+              <p className="source-warning" title={s.injectionFlags.join("; ")}>
+                ⚠ This passage contains instructions aimed at the AI ({s.injectionFlags[0]}). LocalMind treated them as text and ignored them.
+              </p>
+            )}
             <p className="source-excerpt">{s.excerpt}</p>
           </li>
         ))}

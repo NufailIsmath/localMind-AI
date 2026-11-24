@@ -193,7 +193,9 @@ describe.runIf(infraReady)("chat API: orchestration, RAG and tool calling end-to
   });
 
   it("reports health of every dependency", async () => {
-    const res = await h.app.inject({ method: "GET", url: "/api/health" });
+    const anon = await h.app.inject({ method: "GET", url: "/api/health" });
+    expect(anon.json()).toEqual({ status: "ok", checks: { database: { ok: true }, qdrant: { ok: true }, ollama: { ok: true } } });
+    const res = await h.app.inject({ method: "GET", url: "/api/health", headers: auth(alice) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       status: "ok",
@@ -212,7 +214,10 @@ describe.runIf(infraReady)("health when Ollama is down", () => {
     try {
       const res = await h.app.inject({ method: "GET", url: "/api/health" });
       expect(res.statusCode).toBe(503);
-      expect(res.json().checks.ollama).toEqual({ ok: false, detail: "cannot reach Ollama" });
+      expect(res.json().checks.ollama).toEqual({ ok: false });
+      const { token } = await h.register();
+      const detailed = await h.app.inject({ method: "GET", url: "/api/health", headers: auth(token) });
+      expect(detailed.json().checks.ollama).toEqual({ ok: false, detail: "cannot reach Ollama" });
     } finally {
       await h.close();
     }

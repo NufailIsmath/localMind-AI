@@ -15,6 +15,7 @@ export function AdminPanel({ token, currentUserId, onClose }: { token: string; c
   const [audit, setAudit] = useState<AuditEventDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [newGroup, setNewGroup] = useState("");
+  const [person, setPerson] = useState({ email: "", password: "" });
 
   const load = useCallback(async () => {
     try {
@@ -84,6 +85,20 @@ export function AdminPanel({ token, currentUserId, onClose }: { token: string; c
 
         {tab === "people" && (
           <div className="table-wrap">
+            <form
+              className="inline-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await run(() => api.admin.createUser(token, person));
+                setPerson({ email: "", password: "" });
+              }}
+            >
+              <input aria-label="New person's email" type="email" required placeholder="new.person@company.com" value={person.email} onChange={(e) => setPerson({ ...person, email: e.target.value })} />
+              <input aria-label="Temporary password" type="password" required minLength={12} placeholder="Temporary password (12+ chars)" value={person.password} onChange={(e) => setPerson({ ...person, password: e.target.value })} />
+              <button className="btn-primary btn-sm" type="submit">
+                Add person
+              </button>
+            </form>
             <p className="hint">
               Clearance is the most sensitive classification a person can read in documents shared with them. Group membership controls
               which group-shared documents they can see. Changes apply on their next request.

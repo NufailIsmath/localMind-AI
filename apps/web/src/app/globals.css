@@ -1074,6 +1074,35 @@ button:disabled {
   padding: 0;
 }
 
+.suggestion {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
+}
+
+.source-warning {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.inert-url {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0 4px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1100px) {
   .app {

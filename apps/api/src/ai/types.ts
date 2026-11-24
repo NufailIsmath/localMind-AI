@@ -23,6 +23,8 @@ export interface LlmChatRequest {
   messages: ChatMessage[];
   tools?: ToolSpec[];
   signal?: AbortSignal;
+  /** Constrain the output to JSON (a JSON schema, or "json"). */
+  format?: Record<string, unknown> | "json";
   /** When provided the response is streamed and each content delta is reported. */
   onToken?: (delta: string) => void;
 }

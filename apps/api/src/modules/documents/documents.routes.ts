@@ -4,8 +4,10 @@ import { z } from "zod";
 import type { DocumentDto } from "@localmind/shared";
 import { AppError, badRequest } from "../../lib/errors.js";
 import { UuidParam, parse } from "../../lib/validation.js";
-import { CLASSIFICATIONS, VISIBILITIES, type AccessPrincipal } from "../access/access.policy.js";
+import { CLASSIFICATIONS, VISIBILITIES, classificationLevel, type AccessPrincipal } from "../access/access.policy.js";
 import { DOCUMENT_INCLUDE, type DocumentWithAccess } from "../access/access.service.js";
+
+const canManage = (d: DocumentWithAccess, viewer: AccessPrincipal) => d.userId === viewer.userId || viewer.role === "ADMIN";
 
 export function toDocumentDto(d: DocumentWithAccess, viewer: AccessPrincipal): DocumentDto {
   return {
@@ -24,7 +26,12 @@ export function toDocumentDto(d: DocumentWithAccess, viewer: AccessPrincipal): D
     groups: d.groupAccess.map((g) => g.group),
     owned: d.userId === viewer.userId,
     ownerEmail: d.user.email,
-    grants: d.userId === viewer.userId || viewer.role === "ADMIN" ? d.userAccess.map((u) => u.user) : [],
+    grants: canManage(d, viewer) ? d.userAccess.map((u) => u.user) : [],
+    // Only the people who can act on it see the suggestion, and only when it would raise the label.
+    suggestion:
+      canManage(d, viewer) && d.suggestedClassification && classificationLevel(d.suggestedClassification) > classificationLevel(d.classification)
+        ? { classification: d.suggestedClassification, reasons: (d.suggestionReasons as string[] | null) ?? [] }
+        : null,
   };
 }
 
@@ -100,6 +107,12 @@ export const documentRoutes: FastifyPluginAsync = async (app) => {
     const { id } = parse(UuidParam, req.params);
     const body = parse(SharingSchema, req.body ?? {});
     return toDocumentDto(await access.updateDocumentAccess(req.principal, id, body), req.principal);
+  });
+
+  /** "Keep my label" — dismiss the classification suggestion. (Applying it is a normal PATCH /access.) */
+  app.post("/:id/suggestion/dismiss", async (req) => {
+    const { id } = parse(UuidParam, req.params);
+    return toDocumentDto(await access.dismissSuggestion(req.principal, id), req.principal);
   });
 
   /** Revoke an individual grant (e.g. from an approved access request). */

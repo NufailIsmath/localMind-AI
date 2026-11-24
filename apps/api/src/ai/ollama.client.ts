@@ -22,6 +22,7 @@ export interface OllamaChatBody {
   tools?: { type: "function"; function: { name: string; description: string; parameters: unknown } }[];
   stream?: boolean;
   think?: boolean;
+  format?: Record<string, unknown> | "json";
   keep_alive?: string;
   options?: { temperature?: number; num_ctx?: number };
 }
