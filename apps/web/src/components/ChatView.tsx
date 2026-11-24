@@ -1,11 +1,12 @@
 "use client";
 
-import type { ChatStreamEvent, MessageDto, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@clbuddy/shared";
+import type { ChatActionDto, ChatStreamEvent, MessageDto, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@clbuddy/shared";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { api, ApiError, streamChat } from "@/lib/api";
 import { Markdown } from "./Markdown";
 import { RestrictedCard } from "./RestrictedCard";
 import { CopyButton } from "./DraftCard";
+import { LeaveRequestCard } from "./LeaveRequestCard";
 import { Sources } from "./Sources";
 import { ToolActivity, type PendingTool } from "./ToolActivity";
 
@@ -28,12 +29,14 @@ function AssistantMessage({
   question,
   onSend,
   onNoticeStatus,
+  onActionChange,
 }: {
-  message: Pick<MessageDto, "id" | "content" | "sources" | "toolExecutions" | "restricted">;
+  message: Pick<MessageDto, "id" | "content" | "sources" | "toolExecutions" | "restricted" | "actions">;
   token: string;
   question?: string;
   onSend: (text: string) => void;
   onNoticeStatus: (noticeId: string, status: RestrictedNoticeDto["requestStatus"]) => void;
+  onActionChange: (actionId: string, request: ChatActionDto["request"]) => void;
 }) {
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const cite = (ref: string) => {
@@ -44,6 +47,11 @@ function AssistantMessage({
     <article className="msg msg-assistant">
       <ToolActivity executions={message.toolExecutions} />
       <Markdown text={message.content} onCite={cite} />
+      {(message.actions ?? []).map((a) =>
+        a.kind === "leave_request" ? (
+          <LeaveRequestCard key={a.id} action={a} messageId={message.id} token={token} onSend={onSend} onChange={(r) => onActionChange(a.id, r)} />
+        ) : null,
+      )}
       {message.restricted.map((n) => (
         <RestrictedCard
           key={n.id}
@@ -135,6 +143,7 @@ export function ChatView({
         content: message,
         sources: [],
         restricted: [],
+        actions: [],
         toolExecutions: [],
         createdAt: new Date().toISOString(),
       };
@@ -182,6 +191,7 @@ export function ChatView({
                 content: r.answer,
                 sources: r.sources as Source[],
                 restricted: r.restricted,
+                actions: r.actions,
                 toolExecutions: r.toolExecutions,
                 createdAt: new Date().toISOString(),
               },
@@ -249,6 +259,11 @@ export function ChatView({
               token={token}
               question={messages[i - 1]?.role === "USER" ? messages[i - 1]!.content : undefined}
               onSend={(text) => void send(text)}
+              onActionChange={(actionId, request) =>
+                setMessages((all) =>
+                  all.map((x) => (x.id === m.id ? { ...x, actions: x.actions.map((a) => (a.id === actionId ? { ...a, request } : a)) } : x)),
+                )
+              }
               onNoticeStatus={(noticeId, status) =>
                 setMessages((all) =>
                   all.map((x) =>

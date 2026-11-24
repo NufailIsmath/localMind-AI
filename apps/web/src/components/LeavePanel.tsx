@@ -1,6 +1,6 @@
 "use client";
 
-import type { LeavePersonSummaryDto, LeaveType } from "@clbuddy/shared";
+import type { LeavePersonSummaryDto, LeaveRequestDto, LeaveType } from "@clbuddy/shared";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 
@@ -15,13 +15,22 @@ export function LeavePanel({ token, onClose }: { token: string; onClose: () => v
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<"people" | "holidays" | "import">("people");
+  const [tab, setTab] = useState<"requests" | "people" | "holidays" | "import">("requests");
+  const [requests, setRequests] = useState<LeaveRequestDto[]>([]);
+  const [decided, setDecided] = useState<LeaveRequestDto[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const [p, h] = await Promise.all([api.leave.people(token, year), api.leave.holidays(token, year)]);
+      const [p, h, r, d] = await Promise.all([
+        api.leave.people(token, year),
+        api.leave.holidays(token, year),
+        api.leave.requests(token, "PENDING"),
+        api.leave.requests(token, "DECIDED"),
+      ]);
       setPeople(p);
       setHolidays(h);
+      setRequests(r);
+      setDecided(d.slice(0, 10));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     }
@@ -59,9 +68,9 @@ export function LeavePanel({ token, onClose }: { token: string; onClose: () => v
         <header className="panel-head">
           <h2>Leave</h2>
           <div className="tabs compact" role="tablist">
-            {(["people", "holidays", "import"] as const).map((t) => (
+            {(["requests", "people", "holidays", "import"] as const).map((t) => (
               <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)} type="button">
-                {t === "people" ? "People" : t === "holidays" ? "Holidays" : "Import"}
+                {t === "requests" ? `Requests${requests.length ? ` (${requests.length})` : ""}` : t === "people" ? "People" : t === "holidays" ? "Holidays" : "Import"}
               </button>
             ))}
           </div>
@@ -131,6 +140,7 @@ export function LeavePanel({ token, onClose }: { token: string; onClose: () => v
           </div>
         )}
 
+        {tab === "requests" && <Requests pending={requests} decided={decided} token={token} run={run} />}
         {tab === "holidays" && <Holidays holidays={holidays} token={token} run={run} />}
         {tab === "import" && <ImportCsv token={token} run={run} />}
       </div>
@@ -259,6 +269,60 @@ function PersonEditor({ person, year, token, run }: { person: LeavePersonSummary
         ))}
         {person.entries.length === 0 && <li className="muted">No leave recorded for {year}.</li>}
       </ul>
+    </div>
+  );
+}
+
+function Requests({ pending, decided, token, run }: { pending: LeaveRequestDto[]; decided: LeaveRequestDto[]; token: string; run: Run }) {
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const when = (r: LeaveRequestDto) => (r.startDate === r.endDate ? r.startDate : `${r.startDate} → ${r.endDate}`);
+  return (
+    <div>
+      {pending.length === 0 && <p className="muted small">No requests waiting. 🎉</p>}
+      <ul className="request-list">
+        {pending.map((r) => (
+          <li key={r.id} data-testid="leave-request">
+            <div className="small">
+              <strong>{r.requesterEmail}</strong> · {label(r.leaveType)} · {when(r)} · {r.days} {r.days === 1 ? "day" : "days"}
+              {r.availableIfApproved !== null && (
+                <span className={r.availableIfApproved < 0 ? "req-rejected" : "muted"}> · {r.availableIfApproved} left if approved</span>
+              )}
+            </div>
+            {r.note && <blockquote className="small">“{r.note}”</blockquote>}
+            <div className="doc-actions">
+              <input
+                className="decision-note"
+                aria-label={`Note to ${r.requesterEmail}`}
+                placeholder="Note (optional)"
+                maxLength={500}
+                value={notes[r.id] ?? ""}
+                onChange={(e) => setNotes({ ...notes, [r.id]: e.target.value })}
+              />
+              <button type="button" className="btn-primary btn-sm" onClick={() => void run(() => api.leave.decide(token, r.id, true, notes[r.id]), `Approved ${r.requesterEmail}'s leave`)}>
+                Approve
+              </button>
+              <button type="button" className="link danger" onClick={() => void run(() => api.leave.decide(token, r.id, false, notes[r.id]), `Rejected ${r.requesterEmail}'s request`)}>
+                Reject
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {decided.length > 0 && (
+        <>
+          <h3 className="small muted">Recently decided</h3>
+          <ul className="entry-list small">
+            {decided.map((r) => (
+              <li key={r.id}>
+                <span>
+                  {r.requesterEmail} · {when(r)} · <span className={`req-${r.status.toLowerCase()}`}>{r.status.toLowerCase()}</span>
+                  {r.decidedByEmail && <span className="muted"> by {r.decidedByEmail}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

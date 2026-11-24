@@ -9,7 +9,9 @@ import type {
 } from "@clbuddy/shared";
 import { notFound } from "../../lib/errors.js";
 import type { StoredNotice } from "../access/access-requests.service.js";
-import { toNoticeDto } from "../../ai/orchestrator.service.js";
+import { toActionDto, toNoticeDto } from "../../ai/orchestrator.service.js";
+import type { StoredAction } from "../tools/tool.types.js";
+import type { ChatActionDto } from "@clbuddy/shared";
 
 export interface HistoryMessage {
   role: "USER" | "ASSISTANT";
@@ -30,7 +32,7 @@ export interface ChatRepository {
   resolveConversation(userId: string, conversationId: string | undefined, title: string): Promise<{ id: string; created: boolean }>;
   loadHistory(conversationId: string, limit: number): Promise<HistoryMessage[]>;
   addUserMessage(conversationId: string, content: string): Promise<string>;
-  addAssistantMessage(conversationId: string, content: string, sources: Source[], restricted?: StoredNotice[]): Promise<string>;
+  addAssistantMessage(conversationId: string, content: string, sources: Source[], restricted?: StoredNotice[], actions?: (StoredAction & { id: string })[]): Promise<string>;
   recordToolExecution(conversationId: string, record: ToolExecutionRecord): Promise<void>;
   linkToolExecutions(ids: string[], messageId: string): Promise<void>;
 }
@@ -68,7 +70,13 @@ export class PrismaChatRepository implements ChatRepository {
     return msg.id;
   }
 
-  async addAssistantMessage(conversationId: string, content: string, sources: Source[], restricted: StoredNotice[] = []): Promise<string> {
+  async addAssistantMessage(
+    conversationId: string,
+    content: string,
+    sources: Source[],
+    restricted: StoredNotice[] = [],
+    actions: (StoredAction & { id: string })[] = [],
+  ): Promise<string> {
     const [msg] = await this.prisma.$transaction([
       this.prisma.message.create({
         data: {
@@ -77,6 +85,7 @@ export class PrismaChatRepository implements ChatRepository {
           content,
           sources: sources as unknown as Prisma.InputJsonValue,
           ...(restricted.length ? { restricted: restricted as unknown as Prisma.InputJsonValue } : {}),
+          ...(actions.length ? { actions: actions as unknown as Prisma.InputJsonValue } : {}),
         },
         select: { id: true },
       }),
@@ -119,6 +128,7 @@ export class PrismaChatRepository implements ChatRepository {
     userId: string,
     id: string,
     requestStatuses: (messageIds: string[]) => Promise<Map<string, "PENDING" | "APPROVED" | "DENIED">> = async () => new Map(),
+    actionRequests: (refs: string[]) => Promise<Map<string, NonNullable<ChatActionDto["request"]>>> = async () => new Map(),
   ): Promise<ConversationDto> {
     const conv = await this.prisma.conversation.findFirst({
       where: { id, userId },
@@ -131,6 +141,8 @@ export class PrismaChatRepository implements ChatRepository {
     });
     if (!conv) throw notFound("Conversation not found");
     const statuses = await requestStatuses(conv.messages.filter((m) => m.restricted).map((m) => m.id));
+    const storedActions = (m: { actions: unknown }) => ((m.actions as unknown as (StoredAction & { id: string })[] | null) ?? []);
+    const requests = await actionRequests(conv.messages.flatMap((m) => storedActions(m).map((a) => `${m.id}:${a.id}`)));
     return {
       ...toSummary(conv),
       messages: conv.messages.map(
@@ -142,6 +154,7 @@ export class PrismaChatRepository implements ChatRepository {
           restricted: ((m.restricted as unknown as StoredNotice[] | null) ?? []).map((n) =>
             toNoticeDto(n, statuses.get(`${m.id}:${n.id}`) ?? null),
           ),
+          actions: storedActions(m).map((a) => toActionDto(a, requests.get(`${m.id}:${a.id}`) ?? null)),
           toolExecutions: m.toolExecutions.map(
             (t): ToolExecutionSummary => ({
               id: t.id,

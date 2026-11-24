@@ -84,6 +84,9 @@ function decide(messages: OllamaMessage[], toolNames: Set<string>): { content: s
   }
 
   const dates = [...userText.matchAll(/\d{4}-\d{2}-\d{2}/g)].map((m) => m[0]);
+  if (dates.length >= 2 && /\b(?:book|request|apply for|submit)\b/i.test(userText) && toolNames.has("propose_leave_request")) {
+    return call("propose_leave_request", { startDate: dates[0], endDate: dates[1] });
+  }
   if (dates.length >= 2 && /\b(?:leave|off|holiday|vacation)\b/i.test(userText) && toolNames.has("check_leave_dates")) {
     return call("check_leave_dates", { startDate: dates[0], endDate: dates[1] });
   }
@@ -223,7 +226,14 @@ function answerFromTool(p: ToolPayload, question: string): string {
       ];
       if (annual.carryOverToUseBeforeExpiry > 0) lines.push(`Heads-up: ${annual.carryOverToUseBeforeExpiry} carried-over days expire on ${annual.carryOverExpiresOn}, so use them before then!`);
       if (d.upcoming?.length) lines.push(`Coming up: ${d.upcoming.map((u: any) => `${u.startDate} to ${u.endDate}`).join(", ")}.`);
+      if (annual.pending > 0) lines.push(`You also have ${annual.pending} day(s) waiting for HR approval.`);
       return lines.join(" ");
+    }
+    case "propose_leave_request": {
+      if (!d.prepared) return `Hmm, I can't set that one up: ${(d.reason ?? []).join(" ")} Want to try different dates?`;
+      const p = d.plan;
+      const left = p.availableAfter === null ? "" : ` You'd have ${p.availableAfter} days left once it's approved.`;
+      return `All set: I've prepared a request for ${p.startDate} to ${p.endDate} (${p.workingDays} working day(s)).${left} Check the card below and tap **Submit request**; it'll go to HR for approval.`;
     }
     case "check_leave_dates": {
       const hol = d.holidaysInRange?.length ? ` (${d.holidaysInRange.map((h: any) => h.name).join(", ")} doesn't count)` : "";

@@ -3,6 +3,8 @@
 import type { ConversationSummaryDto, UserDto } from "@clbuddy/shared";
 import { CLASSIFICATION_LABELS, relativeTime } from "@/lib/format";
 import { MyLeave } from "./MyLeave";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 
 export function Sidebar({
   user,
@@ -29,6 +31,15 @@ export function Sidebar({
   token: string;
   onAsk: (q: string) => void;
 }) {
+  // HR: how many leave requests are waiting (refreshed every 30s).
+  const [pendingLeave, setPendingLeave] = useState(0);
+  useEffect(() => {
+    if (!user.canManageLeave) return;
+    const load = () => api.leave.requests(token, "PENDING").then((r) => setPendingLeave(r.length)).catch(() => {});
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => clearInterval(t);
+  }, [user.canManageLeave, token]);
   return (
     <nav className="sidebar" aria-label="Conversations">
       <button type="button" className="btn-primary new-chat" onClick={onNew}>
@@ -67,7 +78,7 @@ export function Sidebar({
         <div className="account-actions">
           {user.canManageLeave && (
             <button type="button" className="link" onClick={onOpenLeave}>
-              Manage leave
+              Manage leave{pendingLeave > 0 && <span className="count-badge" aria-label={`${pendingLeave} pending`}>{pendingLeave}</span>}
             </button>
           )}
           {user.role === "ADMIN" && (

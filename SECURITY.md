@@ -33,6 +33,7 @@ Two assumptions drive the design:
 | Parsers | pdf.js 6.4 via unpdf (serverless build without `eval`; not affected by CVE-2024-4367); mammoth for DOCX; `npm audit`: 0 vulnerabilities | — |
 | Transport | CORS allow-list; Helmet security headers; 1 MB JSON body limit; Bearer tokens (no cookies, so no CSRF); infra ports bound to 127.0.0.1 | `app.ts`, `infrastructure/` |
 | Info leakage | Generic 500s; anonymous `/api/health` returns up/down only | `modules/health/` |
+| Actions with side effects | The model can only **propose** (e.g. `propose_leave_request` returns a card); only an authenticated user click submits, and the server re-reads the exact card it prepared. Approvals require the HR role and can't be self-approved; per-person locking prevents double-booking races. | `modules/leave/`, `LeaveRequestCard.tsx` |
 | Personal (leave) data | Self-service tools have no user parameter; identity comes from the session; management needs the HR group or admin; CSV import validated all-or-nothing; every change audited | `modules/leave/`, `tools/leave.tools.ts` |
 | Audit | Sharing, access, grants, requests, group/user changes, injection detections, notice-limit hits | `AuditEvent` table, admin panel |
 

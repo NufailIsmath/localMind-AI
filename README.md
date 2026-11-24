@@ -15,7 +15,7 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 | **Backend** | Node.js · TypeScript · Fastify · Zod · Prisma |
 | **Data** | Qdrant (vectors) · PostgreSQL (users, documents, chats, tool audit log) |
 | **Frontend** | Next.js 16 · React 19 (streaming chat UI), themed to match [codinglegends.io](https://www.codinglegends.io): brand blue `#3A7CC4`, sky/cyan gradient `#78D4E4 → #58BCF8`, black pill buttons; light and dark mode |
-| **Testing** | Vitest — 112 unit + 134 integration tests (real Postgres/Qdrant), 18 Playwright E2E, security suite, RAG evaluation harness |
+| **Testing** | Vitest — 113 unit + 146 integration tests (real Postgres/Qdrant), 20 Playwright E2E, security suite, RAG evaluation harness |
 | **Infra** | Docker Compose |
 
 ## What CL Buddy does for people
@@ -26,6 +26,7 @@ Built to show the parts of AI engineering beyond "call an LLM API": local infere
 | *"Draft an email to HR asking for annual leave from 2 to 6 March"* | Looks up who handles leave (`find_team`), then writes a draft addressed to the real HR contact, shown as an **email card** with **Copy** and **Open in email app** |
 | *"How do I claim back expenses?"* | Answers from the handbook (deadline, receipts, approval limits) and offers to draft the claim note |
 | *"How many leave days do I have?"* | Reads **your own** leave record: *"You have **13 days** of annual leave left for 2026 🌴 (21 entitled + 2 of 3 carried over; 7 taken, 3 booked)"*, and flags carried-over days about to expire |
+| *"Book leave from 28 to 29 December"* | Prepares a **request card** (dates, working days, what's left after, warnings). You press **Submit request**; HR approves it in their inbox; the card updates live to *"✓ Approved: 'Have a lovely break!'"* |
 | *"If I take 28–31 December, what's left?"* | Counts working days (skipping weekends and company holidays), checks clashes, shows the balance before/after, then offers to draft the request to HR |
 | *"What's the CEO's salary?"* (as an intern) | *"Ha, good one, but my lips are sealed! 🤐"* (see [Access control](#access-control)) |
 | *"Turn these notes into a meeting agenda"*, *"Make this email more polite"* | Rewrites, summarises, proofreads, builds checklists and agendas |
@@ -67,9 +68,23 @@ sam@company.com,ANNUAL,2026-03-02,2026-03-06,,Family trip
 - **Strictly self-only tools.** The buddy's two tools (`get_my_leave_balance`, `check_leave_dates`) take **no user parameter**, so the model can't look anyone else up, even if asked or prompt-injected.
 - **Management is HR/admin only.** Management endpoints check that role, and every change is audited.
 
-**What's next.**
-- **Option 3 (requests in the app):** add `PENDING`/`REJECTED` entry states and an approve step. The balance maths doesn't change.
-- **HR-system connection:** all reads go through a `LeaveDataSource` interface, so a BambooHR/HiBob connector can replace the local tables later.
+### Requesting leave
+
+1. Ask CL Buddy ("Book leave from … to …"), or use **Request leave →** on the My leave card.
+2. The buddy calls `propose_leave_request`, which **only prepares a card**: dates, working days, what's left afterwards, any warnings.
+3. Nothing is submitted until **you** press **Submit request**. The model has no tool that submits, approves or changes anything, so a prompt-injected document can at most show a card you can ignore.
+4. The request is **pending**. Pending days are shown separately and **reserved**, so you can't double-book: new requests are checked against *available* = remaining − pending.
+5. HR sees it in **Manage leave → Requests** (with a count badge), along with "x days left if approved", and approves or rejects it with an optional note.
+6. Your card and My leave update live. You can **withdraw** a pending request or **cancel** approved leave that hasn't started.
+
+Rules enforced on the server:
+- requests that clash, overdraw (counting pending days) or fall in the past are refused;
+- nobody can approve their own request (another HR member or an admin has to);
+- approval re-checks the balance and clashes;
+- a per-person lock stops two simultaneous requests from both passing the balance check (a test verifies it fails without the lock);
+- every step is audited.
+
+**What's next.** All leave reads go through a `LeaveDataSource` interface, so a BambooHR/HiBob connector can replace the local tables later.
 
 ## Features
 
@@ -261,6 +276,8 @@ All endpoints except `auth/register`, `auth/login` and `health` require `Authori
 | GET | `/api/access-requests` | `incoming` (to decide on) and `outgoing` (yours) |
 | POST | `/api/access-requests/:id/approve` · `/deny` | Decide (document owner or admin) |
 | GET | `/api/leave/me`, `/api/leave/plan` | Your own leave balance; plan dates without booking |
+| POST | `/api/leave/requests`, `/api/leave/requests/:id/cancel` | Submit (from a chat card or directly) / withdraw your own request |
+| GET / POST | `/api/leave/manage/requests`, `…/:id/approve`, `…/:id/reject` | HR approvals inbox |
 | GET / PUT / POST / DELETE | `/api/leave/manage/…` | People overview, allowances, entries, holidays, CSV import (HR group or admin) |
 | GET | `/api/tools/executions` | Your tool audit log |
 | GET / POST / PATCH | `/api/admin/users`, `/api/admin/users/:id` | People: add, role, clearance, groups (admin) |
@@ -297,6 +314,7 @@ curl -s localhost:4000/api/chat -H "authorization: Bearer $TOKEN" -H "content-ty
 | `find_team` | PostgreSQL: teams, what they handle, member contacts | everyone |
 | `get_my_leave_balance` | The caller's own leave record (no user parameter) | everyone |
 | `check_leave_dates` | Working days, holidays, clashes and balance after, for the caller | everyone |
+| `propose_leave_request` | Prepares a request **card**; submits nothing (the user clicks Submit) | everyone |
 | `get_usage_stats` | PostgreSQL aggregates for your account | everyone |
 | `get_system_stats` | Instance-wide PostgreSQL aggregates | **ADMIN** |
 

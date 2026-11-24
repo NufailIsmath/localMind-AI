@@ -6,7 +6,7 @@ import { listDocumentsTool, systemStatsTool, usageStatsTool } from "./tools/data
 import { searchKnowledgeTool } from "./tools/search-knowledge.tool.js";
 import { getCurrentTimeTool } from "./tools/time.tool.js";
 import { findTeamTool } from "./tools/team.tool.js";
-import { checkLeaveDatesTool, myLeaveBalanceTool } from "./tools/leave.tools.js";
+import { checkLeaveDatesTool, myLeaveBalanceTool, proposeLeaveRequestTool } from "./tools/leave.tools.js";
 import type { LeaveService } from "../leave/leave.service.js";
 
 export function createToolRegistry(deps: {
@@ -25,7 +25,7 @@ export function createToolRegistry(deps: {
     .register(listDocumentsTool(deps.prisma))
     .register(usageStatsTool(deps.prisma))
     .register(systemStatsTool(deps.prisma));
-  if (deps.leave) registry.register(myLeaveBalanceTool(deps.leave)).register(checkLeaveDatesTool(deps.leave));
+  if (deps.leave) registry.register(myLeaveBalanceTool(deps.leave)).register(checkLeaveDatesTool(deps.leave)).register(proposeLeaveRequestTool(deps.leave));
   return registry;
 }
 

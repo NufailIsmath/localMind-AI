@@ -69,6 +69,16 @@ describe("computeBalance", () => {
     expect(after).toMatchObject({ total: 24, carryOverForfeited: 2, carryOverToUseBeforeExpiry: 0, remaining: 21 });
   });
 
+  it("reserves pending requests: shown separately, not deducted from remaining, but deducted from available", () => {
+    const b = computeBalance(
+      2026,
+      annual(),
+      [entry("2026-12-21", "2026-12-23", 6), entry("2026-12-28", "2026-12-30", 6, { status: "PENDING" }), entry("2026-06-01", "2026-06-02", 4, { status: "REJECTED" })],
+      "2026-11-24",
+    );
+    expect(b).toMatchObject({ booked: 3, pending: 3, remaining: 18, available: 15 });
+  });
+
   it("can go negative (overdrawn) rather than hiding it", () => {
     expect(computeBalance(2026, annual({ entitledHalfDays: 4 }), [entry("2026-03-02", "2026-03-06", 10)], "2026-11-24").remaining).toBe(-3);
   });
@@ -76,9 +86,9 @@ describe("computeBalance", () => {
 
 describe("overlapping", () => {
   it("finds approved entries touching a range", () => {
-    const es = [entry("2026-03-02", "2026-03-04", 6), entry("2026-03-10", "2026-03-10", 2, { status: "CANCELLED" })];
-    expect(overlapping(es, "2026-03-04", "2026-03-12")).toHaveLength(1);
-    expect(overlapping(es, "2026-03-05", "2026-03-12")).toHaveLength(0);
+    const es = [entry("2026-03-02", "2026-03-04", 6), entry("2026-03-10", "2026-03-10", 2, { status: "CANCELLED" }), entry("2026-03-11", "2026-03-11", 2, { status: "PENDING" })];
+    expect(overlapping(es, "2026-03-04", "2026-03-12")).toHaveLength(2); // approved + pending; cancelled ignored
+    expect(overlapping(es, "2026-03-05", "2026-03-10")).toHaveLength(0);
   });
 });
 

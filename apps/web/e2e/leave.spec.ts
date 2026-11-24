@@ -46,8 +46,9 @@ test.describe("leave balance", () => {
 
   test("HR records leave and the person's balance updates", async ({ page, browser }) => {
     const hrToken = await signIn(page, "hr@demo.local");
-    await page.getByRole("button", { name: "Manage leave" }).click();
+    await page.getByRole("button", { name: /Manage leave/ }).click();
     const panel = page.getByRole("dialog", { name: "Manage leave" });
+    await panel.getByRole("tab", { name: "People" }).click(); // opens on Requests by default
     const row = panel.getByRole("row").filter({ hasText: "engineer@demo.local" });
     await expect(row).toBeVisible();
     await row.getByRole("button", { name: "Edit" }).click();
@@ -73,7 +74,7 @@ test.describe("leave balance", () => {
 
   test("people outside HR can't open leave management", async ({ page }) => {
     const token = await signIn(page, "engineer@demo.local");
-    await expect(page.getByRole("button", { name: "Manage leave" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Manage leave/ })).toHaveCount(0);
     const res = await page.request.get(`${API}/api/leave/manage/people?year=${year}`, { headers: { authorization: `Bearer ${token}` } });
     expect(res.status()).toBe(403);
   });

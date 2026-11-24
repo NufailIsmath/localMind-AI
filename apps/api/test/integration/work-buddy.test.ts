@@ -42,7 +42,7 @@ describe.runIf(infraReady)("CL Buddy as a work buddy", () => {
         conversationId: "x",
         signal: new AbortController().signal,
         addSources: () => [],
-        addRestricted: () => [],
+        addRestricted: () => [], addAction: () => "A1",
       });
     const laptop = await run("my laptop is broken");
     expect(laptop).toMatchObject({ status: "SUCCESS", output: { teams: [{ team: "IT Support", contacts: ["helpdesk@corp.test"] }] } });

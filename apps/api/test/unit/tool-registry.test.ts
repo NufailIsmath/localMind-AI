@@ -13,6 +13,7 @@ const ctx = (over: Partial<ToolContext> = {}): ToolContext => ({
   signal: new AbortController().signal,
   addSources: () => [],
   addRestricted: () => [],
+  addAction: () => "A1",
   ...over,
 });
 

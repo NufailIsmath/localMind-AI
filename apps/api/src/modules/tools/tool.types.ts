@@ -1,6 +1,10 @@
 import type { z } from "zod";
 import type { RetrievedChunk, WithheldMatch } from "../../rag/retrieval.service.js";
 import type { AccessPrincipal } from "../access/access.policy.js";
+import type { ChatActionDto } from "@clbuddy/shared";
+
+/** Server-side form of a chat action (without the live request status). */
+export type StoredAction = Omit<ChatActionDto, "id" | "request">;
 
 export type Role = "USER" | "ADMIN";
 
@@ -19,6 +23,11 @@ export interface ToolContext {
   addSources(chunks: RetrievedChunk[], query?: string): string[];
   /** Registers "that's confidential" notices for documents the user can't read; returns their refs (R1…). */
   addRestricted(matches: WithheldMatch[]): string[];
+  /**
+   * Attaches an action card for the USER to confirm (e.g. "Submit leave request").
+   * Tools never perform side effects themselves; returns the action id (A1…).
+   */
+  addAction(action: StoredAction): string;
 }
 
 export interface ToolDefinition<S extends z.ZodType = z.ZodType> {

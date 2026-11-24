@@ -23,6 +23,7 @@ export const TOOL_LABELS: Record<string, string> = {
   find_team: "Looked up who handles it",
   get_my_leave_balance: "Checked your leave balance",
   check_leave_dates: "Checked the dates",
+  propose_leave_request: "Prepared a leave request",
   get_current_time: "Checked the time",
   list_documents: "Listed documents",
   get_usage_stats: "Read usage stats",

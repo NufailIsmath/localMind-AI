@@ -45,6 +45,12 @@ export function buildSystemPrompt({ now = new Date(), tools, user }: SystemPromp
       "- To plan time off, call check_leave_dates (resolve relative dates like \"next Friday\" with get_current_time first). Mention the working days, any holidays in the range, what they'd have left and any warnings; check the leave policy (notice periods, approvals) with search_knowledge; then offer to draft the request.",
     );
   }
+  if (names.has("propose_leave_request")) {
+    guidance.push(
+      "- When the user wants to book or request time off, call propose_leave_request. It only PREPARES a request card; the user submits it with the button, and HR approves it. Never say a request was submitted or approved. If it can't be prepared (clash, not enough days, past dates), explain why and suggest alternatives.",
+      "- Requests show as pending until HR decides; pending days are reserved, so they're already taken off what's available for new requests.",
+    );
+  }
   if (names.has("get_my_leave_balance") || names.has("check_leave_dates")) {
     guidance.push("- Leave records are personal. You can only see the current user's own; never guess or discuss anyone else's.");
   }

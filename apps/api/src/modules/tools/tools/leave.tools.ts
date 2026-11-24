@@ -43,3 +43,46 @@ export const checkLeaveDatesTool = (leave: LeaveService) =>
       return leave.planDates(ctx.userId, startDate, endDate, leaveType);
     },
   });
+
+/**
+ * Prepares a leave request for the user to CONFIRM. It does not submit
+ * anything: it attaches an action card with a "Submit request" button, and
+ * only the user's click (an authenticated API call) creates the request. So a
+ * prompt-injected model can at most show a card the user can ignore.
+ */
+export const proposeLeaveRequestTool = (leave: LeaveService) =>
+  defineTool({
+    name: "propose_leave_request",
+    description:
+      "Prepare a leave request for the current user to review and submit with one click. It does NOT submit the request — " +
+      "the user must press 'Submit request' on the card. Use when they want to book or request time off. Resolve relative " +
+      "dates with get_current_time first.",
+    schema: z.object({
+      startDate: DATE.describe("First day off, YYYY-MM-DD"),
+      endDate: DATE.describe("Last day off, YYYY-MM-DD"),
+      leaveType: z.enum(TYPES).optional().describe("Defaults to ANNUAL"),
+      note: z.string().trim().max(300).optional().describe("Optional short reason for HR"),
+    }),
+    async execute({ startDate, endDate, leaveType, note }, ctx) {
+      const plan = await leave.planDates(ctx.userId, startDate, endDate, leaveType);
+      if (!plan.requestable) {
+        return { prepared: false, reason: plan.warnings, plan, note: "Explain the problem and suggest alternatives; no card was shown." };
+      }
+      const actionId = ctx.addAction({
+        kind: "leave_request",
+        leaveType: plan.leaveType,
+        startDate,
+        endDate,
+        workingDays: plan.workingDays,
+        availableAfter: plan.availableAfter,
+        warnings: plan.warnings,
+        note: note ?? null,
+      });
+      return {
+        prepared: true,
+        actionId,
+        plan,
+        instruction: "A request card is shown under your reply. Tell the user to check it and press 'Submit request'; it goes to HR for approval. Don't say it has been submitted.",
+      };
+    },
+  });

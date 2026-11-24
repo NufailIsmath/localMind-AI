@@ -14,7 +14,7 @@ const PATTERNS: { re: RegExp; label: string }[] = [
   { re: /^\s*(?:system|assistant|developer)\s*:/im, label: "impersonates a system or assistant message" },
   { re: /<\/?\s*(?:system|instructions?|im_start|im_end)\s*>|<\|im_(?:start|end)\|>|\[\/?INST\]/i, label: "contains chat-template control tokens" },
   { re: /\[\[\s*(?:call|say)\s*:/i, label: "contains embedded tool-call directives" },
-  { re: /\b(?:call|use|invoke|run)\b[^.\n]{0,15}\b(?:the )?(?:search_knowledge|find_team|get_my_leave_balance|check_leave_dates|list_documents|get_usage_stats|get_system_stats|calculate|get_current_time)\b/i, label: "tells the AI which tools to call" },
+  { re: /\b(?:call|use|invoke|run)\b[^.\n]{0,15}\b(?:the )?(?:search_knowledge|find_team|get_my_leave_balance|check_leave_dates|propose_leave_request|list_documents|get_usage_stats|get_system_stats|calculate|get_current_time)\b/i, label: "tells the AI which tools to call" },
   { re: /\b(?:send|post|forward|exfiltrate|upload)\b[^.\n]{0,60}\b(?:https?:\/\/|webhook|to this (?:url|link|address))/i, label: "asks the AI to send data elsewhere" },
 ];
 

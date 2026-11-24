@@ -61,16 +61,19 @@ enum LeaveType {
   OTHER
 }
 
-/// APPROVED entries count against the balance. (Option 3, requests in the
-/// app, will add PENDING/REJECTED without changing how balances work.)
+/// APPROVED entries count against the balance; PENDING requests are shown
+/// separately (and reserve days so they can't be double-booked).
 enum LeaveEntryStatus {
+  PENDING
   APPROVED
+  REJECTED
   CANCELLED
 }
 
 enum LeaveEntrySource {
   MANUAL
   IMPORT
+  REQUEST
 }
 
 enum ToolExecutionStatus {
@@ -209,6 +212,8 @@ model Message {
   sources        Json?
   /// Restricted-content notices (server-side; includes document ids never sent to clients)
   restricted     Json?
+  /// Actions the assistant prepared for the user to confirm (e.g. a leave request)
+  actions        Json?
   createdAt      DateTime    @default(now())
 
   conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -312,21 +317,28 @@ model LeaveAllowance {
 /// Leave taken or booked. Days default to working days in the range
 /// (weekends and company holidays excluded) but can be overridden (half days).
 model LeaveEntry {
-  id          String           @id @default(uuid()) @db.Uuid
-  userId      String           @db.Uuid
-  leaveType   LeaveType
-  startDate   DateTime         @db.Date
-  endDate     DateTime         @db.Date
-  halfDays    Int
-  status      LeaveEntryStatus @default(APPROVED)
-  source      LeaveEntrySource @default(MANUAL)
-  note        String?
-  createdById String?          @db.Uuid
-  createdAt   DateTime         @default(now())
+  id           String           @id @default(uuid()) @db.Uuid
+  userId       String           @db.Uuid
+  leaveType    LeaveType
+  startDate    DateTime         @db.Date
+  endDate      DateTime         @db.Date
+  halfDays     Int
+  status       LeaveEntryStatus @default(APPROVED)
+  source       LeaveEntrySource @default(MANUAL)
+  note         String?
+  createdById  String?          @db.Uuid
+  createdAt    DateTime         @default(now())
+  /// Approval workflow (requests made in the app)
+  decidedById  String?          @db.Uuid
+  decidedAt    DateTime?
+  decisionNote String?
+  /// "messageId:actionId" of the chat card the request was submitted from
+  actionRef    String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, startDate])
+  @@index([status, startDate])
 }
 
 /// Company holidays (not counted as leave days).

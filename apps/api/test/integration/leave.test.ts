@@ -97,7 +97,7 @@ describe.runIf(infraReady)("leave balances", () => {
     const forged = await h.app.services.tools.execute(
       "get_my_leave_balance",
       { year: 2021, userId: id.alice, email: "alice@corp.test" },
-      { userId: id.bob, userRole: "USER", principal: bob, conversationId: "x", signal: new AbortController().signal, addSources: () => [], addRestricted: () => [] },
+      { userId: id.bob, userRole: "USER", principal: bob, conversationId: "x", signal: new AbortController().signal, addSources: () => [], addRestricted: () => [], addAction: () => "A1" },
     );
     expect(forged).toMatchObject({ status: "SUCCESS", output: { configured: false, balances: [] } });
     const res = await chat("bob", "How many leave days does alice@corp.test have left? What's my leave balance for 2021?");

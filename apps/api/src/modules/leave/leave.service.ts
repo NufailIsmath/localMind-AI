@@ -1,5 +1,5 @@
 import type { LeaveType, Prisma, PrismaClient } from "@prisma/client";
-import type { LeaveBalanceDto, LeaveEntryDto, LeavePersonSummaryDto, LeavePlanDto } from "@clbuddy/shared";
+import type { LeaveBalanceDto, LeaveEntryDto, LeavePersonSummaryDto, LeavePlanDto, LeaveRequestDto } from "@clbuddy/shared";
 import { AppError, badRequest, forbidden, notFound } from "../../lib/errors.js";
 import type { AccessPrincipal } from "../access/access.policy.js";
 import type { AccessService } from "../access/access.service.js";
@@ -24,9 +24,17 @@ export const LEAVE_TYPES = ["ANNUAL", "SICK", "PARENTAL", "UNPAID", "OTHER"] as 
  * Later this can be swapped for an HR-system connector (BambooHR, HiBob…)
  * without touching the tools, balance maths or UI.
  */
+export interface EntryRecord extends EntryInput {
+  id: string;
+  source: "MANUAL" | "IMPORT" | "REQUEST";
+  decisionNote: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
 export interface LeaveDataSource {
   allowances(userId: string, year: number): Promise<AllowanceInput[]>;
-  entries(userId: string, year: number): Promise<EntryInput[]>;
+  entries(userId: string, year: number): Promise<EntryRecord[]>;
   holidays(from: string, to: string): Promise<{ date: string; name: string }[]>;
 }
 
@@ -44,7 +52,7 @@ export class PrismaLeaveDataSource implements LeaveDataSource {
     }));
   }
 
-  async entries(userId: string, year: number): Promise<EntryInput[]> {
+  async entries(userId: string, year: number): Promise<EntryRecord[]> {
     const rows = await this.prisma.leaveEntry.findMany({
       where: { userId, startDate: { gte: parseDate(`${year}-01-01`), lte: parseDate(`${year}-12-31`) } },
       orderBy: { startDate: "asc" },
@@ -57,6 +65,10 @@ export class PrismaLeaveDataSource implements LeaveDataSource {
       halfDays: e.halfDays,
       status: e.status,
       note: e.note,
+      source: e.source,
+      decisionNote: e.decisionNote,
+      decidedAt: e.decidedAt?.toISOString() ?? null,
+      createdAt: e.createdAt.toISOString(),
     }));
   }
 
@@ -69,7 +81,7 @@ export class PrismaLeaveDataSource implements LeaveDataSource {
   }
 }
 
-const toEntryDto = (e: EntryInput & { id?: string }): LeaveEntryDto => ({
+const toEntryDto = (e: EntryInput & Partial<EntryRecord>): LeaveEntryDto => ({
   id: e.id ?? "",
   leaveType: e.leaveType,
   startDate: e.startDate,
@@ -77,6 +89,10 @@ const toEntryDto = (e: EntryInput & { id?: string }): LeaveEntryDto => ({
   days: days(e.halfDays),
   status: e.status,
   note: e.note ?? null,
+  ...(e.source ? { source: e.source } : {}),
+  ...(e.decisionNote !== undefined ? { decisionNote: e.decisionNote } : {}),
+  ...(e.decidedAt !== undefined ? { decidedAt: e.decidedAt } : {}),
+  ...(e.createdAt ? { createdAt: e.createdAt } : {}),
 });
 
 export interface LeaveOptions {
@@ -117,6 +133,10 @@ export class LeaveService {
       balances,
       upcoming: entries.filter((e) => e.status === "APPROVED" && e.startDate > asOf).map(toEntryDto),
       taken: entries.filter((e) => e.status === "APPROVED" && e.startDate <= asOf).map(toEntryDto),
+      requests: entries
+        .filter((e) => e.source === "REQUEST")
+        .sort((a, b) => Number(b.status === "PENDING") - Number(a.status === "PENDING") || b.createdAt.localeCompare(a.createdAt))
+        .map(toEntryDto),
     };
   }
 
@@ -127,17 +147,34 @@ export class LeaveService {
     const [allowances, entries] = await Promise.all([this.source.allowances(userId, year), this.source.entries(userId, year)]);
     const allowance = allowances.find((a) => a.leaveType === leaveType);
     const warnings: string[] = [];
-    if (startDate < asOf) warnings.push("These dates are in the past.");
+    let requestable = true;
+    if (startDate < asOf) {
+      warnings.push("These dates are in the past.");
+      requestable = false;
+    }
     const clashes = overlapping(entries, startDate, endDate);
-    if (clashes.length) warnings.push(`You already have leave booked on overlapping dates (${clashes.map((c) => `${c.startDate}–${c.endDate}`).join(", ")}).`);
-    if (halfDays === 0) warnings.push("These dates contain no working days.");
+    if (clashes.length) {
+      warnings.push(`You already have leave booked or requested on overlapping dates (${clashes.map((c) => `${c.startDate}–${c.endDate}`).join(", ")}).`);
+      requestable = false;
+    }
+    if (halfDays === 0) {
+      warnings.push("These dates contain no working days.");
+      requestable = false;
+    }
 
     let before = null;
     let after = null;
     if (allowance) {
       before = computeBalance(year, allowance, entries, asOf);
       after = computeBalance(year, allowance, [...entries, { leaveType, startDate, endDate, halfDays, status: "APPROVED" }], asOf);
-      if (after.remaining < 0) warnings.push(`That would overdraw your ${leaveType.toLowerCase()} leave by ${-after.remaining} day(s).`);
+      if (after.available < 0) {
+        const pendingNote = before.pending > 0 ? ` (counting your ${before.pending} pending day(s))` : "";
+        warnings.push(`That would overdraw your ${leaveType.toLowerCase()} leave by ${-after.available} day(s)${pendingNote}.`);
+        requestable = false;
+      }
+    } else if (leaveType === "ANNUAL") {
+      warnings.push("HR hasn't set up your annual leave allowance for that year yet.");
+      requestable = false;
     }
     return {
       leaveType,
@@ -149,8 +186,153 @@ export class LeaveService {
       configured: Boolean(allowance),
       remainingBefore: before?.remaining ?? null,
       remainingAfter: after?.remaining ?? null,
+      availableBefore: before?.available ?? null,
+      availableAfter: after?.available ?? null,
       warnings,
+      requestable,
     };
+  }
+
+  // ---------- requests (option 3) ----------
+
+  /**
+   * Submits a leave request for the CALLER. Only ever called from an explicit
+   * user action (button/API) — the assistant can propose a request but has no
+   * tool that submits one. Serialised per user so two quick requests can't
+   * both pass the balance check.
+   */
+  async createRequest(
+    userId: string,
+    input: { leaveType: LeaveTypeName; startDate: string; endDate: string; note?: string | null; actionRef?: string | null },
+  ): Promise<LeaveEntryDto> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`leave:${userId}`}))`;
+      const plan = await this.planDates(userId, input.startDate, input.endDate, input.leaveType);
+      if (!plan.requestable) throw new AppError(409, "LEAVE_NOT_REQUESTABLE", plan.warnings.join(" ") || "These dates can't be requested", plan.warnings);
+      if (input.actionRef) {
+        const dup = await tx.leaveEntry.findFirst({ where: { userId, actionRef: input.actionRef, status: { in: ["PENDING", "APPROVED"] } } });
+        if (dup) throw new AppError(409, "CONFLICT", "You've already submitted this request");
+      }
+      const e = await tx.leaveEntry.create({
+        data: {
+          userId,
+          leaveType: input.leaveType,
+          startDate: parseDate(input.startDate),
+          endDate: parseDate(input.endDate),
+          halfDays: halfDaysOf(plan.workingDays),
+          status: "PENDING",
+          source: "REQUEST",
+          note: input.note?.slice(0, 500) || null,
+          createdById: userId,
+          actionRef: input.actionRef ?? null,
+        },
+      });
+      await this.access.audit(userId, "leave.request.created", "leave", e.id, { startDate: input.startDate, endDate: input.endDate, days: plan.workingDays, leaveType: input.leaveType });
+      return this.entryDto(e);
+    }, { timeout: 20_000 });
+  }
+
+  /** Withdraw a pending request, or cancel your own approved leave that hasn't started. */
+  async cancelOwn(userId: string, entryId: string): Promise<LeaveEntryDto> {
+    const e = await this.prisma.leaveEntry.findFirst({ where: { id: entryId, userId } });
+    if (!e) throw notFound("Leave not found");
+    const started = toISODate(e.startDate) <= this.today();
+    if (!(e.status === "PENDING" || (e.status === "APPROVED" && !started))) {
+      throw new AppError(409, "CONFLICT", e.status === "APPROVED" ? "Leave that has already started can only be changed by HR" : `This request is already ${e.status.toLowerCase()}`);
+    }
+    const updated = await this.prisma.leaveEntry.update({ where: { id: entryId }, data: { status: "CANCELLED" } });
+    await this.access.audit(userId, e.status === "PENDING" ? "leave.request.withdrawn" : "leave.entry.cancelled_by_owner", "leave", entryId, {
+      startDate: toISODate(e.startDate),
+      endDate: toISODate(e.endDate),
+    });
+    return this.entryDto(updated);
+  }
+
+  /** HR inbox. */
+  async listRequests(p: AccessPrincipal, status: "PENDING" | "DECIDED" = "PENDING"): Promise<LeaveRequestDto[]> {
+    await this.requireManager(p);
+    const rows = await this.prisma.leaveEntry.findMany({
+      where: status === "PENDING" ? { source: "REQUEST", status: "PENDING" } : { source: "REQUEST", status: { in: ["APPROVED", "REJECTED"] } },
+      orderBy: status === "PENDING" ? { startDate: "asc" } : { decidedAt: "desc" },
+      take: 200,
+      include: { user: { select: { email: true } } },
+    });
+    const deciders = new Map(
+      (await this.prisma.user.findMany({ where: { id: { in: rows.map((r) => r.decidedById).filter((x): x is string => !!x) } }, select: { id: true, email: true } })).map((u) => [u.id, u.email]),
+    );
+    return Promise.all(
+      rows.map(async (r) => {
+        const year = r.startDate.getUTCFullYear();
+        const allowance = (await this.source.allowances(r.userId, year)).find((a) => a.leaveType === r.leaveType);
+        let ifApproved: number | null = null;
+        if (allowance) {
+          const entries = await this.source.entries(r.userId, year);
+          ifApproved = computeBalance(year, allowance, entries.map((x) => (x.id === r.id ? { ...x, status: "APPROVED" as const } : x)), this.today()).remaining;
+        }
+        return { ...this.entryDto(r), requesterEmail: r.user.email, decidedByEmail: r.decidedById ? deciders.get(r.decidedById) ?? null : null, availableIfApproved: ifApproved };
+      }),
+    );
+  }
+
+  async decide(p: AccessPrincipal, entryId: string, approve: boolean, note?: string | null): Promise<LeaveEntryDto> {
+    await this.requireManager(p);
+    return this.prisma.$transaction(async (tx) => {
+      const e = await tx.leaveEntry.findUnique({ where: { id: entryId } });
+      if (!e || e.source !== "REQUEST") throw notFound("Request not found");
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`leave:${e.userId}`}))`;
+      const current = await tx.leaveEntry.findUnique({ where: { id: entryId } });
+      if (current!.status !== "PENDING") throw new AppError(409, "CONFLICT", `This request was already ${current!.status.toLowerCase()}`);
+      if (e.userId === p.userId) throw forbidden("You can't decide on your own leave request; another HR member or an admin has to");
+      if (approve) {
+        const year = e.startDate.getUTCFullYear();
+        const [allowances, entries] = await Promise.all([this.source.allowances(e.userId, year), this.source.entries(e.userId, year)]);
+        const others = entries.filter((x) => x.id !== e.id);
+        const start = toISODate(e.startDate);
+        const end = toISODate(e.endDate);
+        if (overlapping(others.filter((x) => x.status === "APPROVED"), start, end).length) {
+          throw new AppError(409, "CONFLICT", "It overlaps leave that's already approved; reject it or cancel the other leave first");
+        }
+        const allowance = allowances.find((a) => a.leaveType === e.leaveType);
+        if (allowance) {
+          const after = computeBalance(year, allowance, [...others, { leaveType: e.leaveType, startDate: start, endDate: end, halfDays: e.halfDays, status: "APPROVED" }], this.today());
+          if (after.remaining < 0) throw new AppError(409, "CONFLICT", `Approving would overdraw their ${e.leaveType.toLowerCase()} leave by ${-after.remaining} day(s)`);
+        }
+      }
+      const updated = await tx.leaveEntry.update({
+        where: { id: entryId },
+        data: { status: approve ? "APPROVED" : "REJECTED", decidedById: p.userId, decidedAt: new Date(), decisionNote: note?.slice(0, 500) || null },
+      });
+      await this.access.audit(p.userId, approve ? "leave.request.approved" : "leave.request.rejected", "leave", entryId, {
+        requester: e.userId,
+        startDate: toISODate(e.startDate),
+        endDate: toISODate(e.endDate),
+        note: note ?? null,
+      });
+      return this.entryDto(updated);
+    }, { timeout: 20_000 });
+  }
+
+  /** Status of requests submitted from chat cards ("messageId:actionId" → request). */
+  async requestsForActions(userId: string, refs: string[]) {
+    if (refs.length === 0) return new Map<string, { id: string; status: LeaveEntryDto["status"]; decisionNote: string | null }>();
+    const rows = await this.prisma.leaveEntry.findMany({ where: { userId, actionRef: { in: refs } }, orderBy: { createdAt: "asc" } });
+    return new Map(rows.map((r) => [r.actionRef!, { id: r.id, status: r.status, decisionNote: r.decisionNote }]));
+  }
+
+  private entryDto(e: { id: string; leaveType: LeaveTypeName; startDate: Date; endDate: Date; halfDays: number; status: LeaveEntryDto["status"]; note: string | null; source: "MANUAL" | "IMPORT" | "REQUEST"; decisionNote: string | null; decidedAt: Date | null; createdAt: Date }): LeaveEntryDto {
+    return toEntryDto({
+      id: e.id,
+      leaveType: e.leaveType,
+      startDate: toISODate(e.startDate),
+      endDate: toISODate(e.endDate),
+      halfDays: e.halfDays,
+      status: e.status,
+      note: e.note,
+      source: e.source,
+      decisionNote: e.decisionNote,
+      decidedAt: e.decidedAt?.toISOString() ?? null,
+      createdAt: e.createdAt.toISOString(),
+    });
   }
 
   // ---------- HR / admin management ----------

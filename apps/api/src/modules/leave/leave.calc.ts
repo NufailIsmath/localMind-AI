@@ -6,6 +6,8 @@
  *   taken     = approved leave that has started (start ≤ as-of date)
  *   booked    = approved leave in the future
  *   remaining = total − taken − booked
+ *   pending   = requests awaiting approval (not deducted, but reserved)
+ *   available = remaining − pending   (what a NEW request is checked against)
  *
  * Carry-over: days carried from last year must be used by their expiry date.
  * After that date, only the carried days actually used before it still count;
@@ -27,7 +29,7 @@ export interface EntryInput {
   startDate: string; // YYYY-MM-DD
   endDate: string;
   halfDays: number;
-  status: "APPROVED" | "CANCELLED";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
   note?: string | null;
 }
 
@@ -45,6 +47,8 @@ export interface Balance {
   taken: number;
   booked: number;
   remaining: number;
+  pending: number;
+  available: number;
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -87,6 +91,9 @@ export function computeBalance(year: number, allowance: AllowanceInput, entries:
   );
   const taken = relevant.filter((e) => e.startDate <= asOf).reduce((a, e) => a + e.halfDays, 0);
   const booked = relevant.filter((e) => e.startDate > asOf).reduce((a, e) => a + e.halfDays, 0);
+  const pending = entries
+    .filter((e) => e.status === "PENDING" && e.leaveType === allowance.leaveType && e.startDate.startsWith(`${year}-`))
+    .reduce((a, e) => a + e.halfDays, 0);
 
   let usableCarry = allowance.carriedHalfDays;
   let forfeited = 0;
@@ -116,10 +123,12 @@ export function computeBalance(year: number, allowance: AllowanceInput, entries:
     taken: days(taken),
     booked: days(booked),
     remaining: days(total - taken - booked),
+    pending: days(pending),
+    available: days(total - taken - booked - pending),
   };
 }
 
-/** Returns entries that overlap [start, end]. */
+/** Returns approved or pending entries that overlap [start, end]. */
 export function overlapping(entries: EntryInput[], start: string, end: string): EntryInput[] {
-  return entries.filter((e) => e.status === "APPROVED" && e.startDate <= end && e.endDate >= start);
+  return entries.filter((e) => (e.status === "APPROVED" || e.status === "PENDING") && e.startDate <= end && e.endDate >= start);
 }

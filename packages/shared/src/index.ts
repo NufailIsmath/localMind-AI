@@ -43,7 +43,13 @@ export interface LeaveBalance {
   taken: number;
   booked: number;
   remaining: number;
+  /** Requested, awaiting approval (not deducted yet). */
+  pending: number;
+  /** remaining − pending: what a new request can use. */
+  available: number;
 }
+
+export type LeaveEntryStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
 export interface LeaveEntryDto {
   id: string;
@@ -51,8 +57,38 @@ export interface LeaveEntryDto {
   startDate: string;
   endDate: string;
   days: number;
-  status: "APPROVED" | "CANCELLED";
+  status: LeaveEntryStatus;
   note: string | null;
+  source?: "MANUAL" | "IMPORT" | "REQUEST";
+  decisionNote?: string | null;
+  decidedAt?: string | null;
+  createdAt?: string;
+}
+
+/** A leave request as HR sees it in the approvals inbox. */
+export interface LeaveRequestDto extends LeaveEntryDto {
+  requesterEmail: string;
+  decidedByEmail: string | null;
+  /** Requester's balance for that type if this request were approved. */
+  availableIfApproved: number | null;
+}
+
+/**
+ * Something the assistant prepared for the user to confirm with a click —
+ * the model can propose, only the user can submit.
+ */
+export interface ChatActionDto {
+  id: string;
+  kind: "leave_request";
+  leaveType: LeaveType;
+  startDate: string;
+  endDate: string;
+  workingDays: number;
+  availableAfter: number | null;
+  warnings: string[];
+  note: string | null;
+  /** Set once the user submitted it. */
+  request: { id: string; status: LeaveEntryStatus; decisionNote: string | null } | null;
 }
 
 export interface LeaveBalanceDto {
@@ -63,6 +99,8 @@ export interface LeaveBalanceDto {
   balances: LeaveBalance[];
   upcoming: LeaveEntryDto[];
   taken: LeaveEntryDto[];
+  /** The user's own requests this year (pending first, then recent decisions). */
+  requests: LeaveEntryDto[];
 }
 
 export interface LeavePlanDto {
@@ -75,7 +113,12 @@ export interface LeavePlanDto {
   configured: boolean;
   remainingBefore: number | null;
   remainingAfter: number | null;
+  /** Available (remaining − pending) before/after: what requests are checked against. */
+  availableBefore: number | null;
+  availableAfter: number | null;
   warnings: string[];
+  /** False when the dates can't be requested as they are (overdraw, clash, no working days, past). */
+  requestable: boolean;
 }
 
 export interface LeavePersonSummaryDto {
@@ -194,6 +237,7 @@ export interface ChatResponse {
   answer: string;
   sources: Source[];
   restricted: RestrictedNoticeDto[];
+  actions: ChatActionDto[];
   toolExecutions: ToolExecutionSummary[];
 }
 
@@ -203,6 +247,7 @@ export interface MessageDto {
   content: string;
   sources: Source[];
   restricted: RestrictedNoticeDto[];
+  actions: ChatActionDto[];
   toolExecutions: ToolExecutionSummary[];
   createdAt: string;
 }

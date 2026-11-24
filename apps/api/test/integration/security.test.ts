@@ -102,7 +102,7 @@ describe.runIf(infraReady)("security", () => {
 
     it("has no tools with side effects to abuse", () => {
       expect(h.app.services.tools.list("ADMIN").map((t) => t.name).sort()).toEqual(
-        ["calculate", "check_leave_dates", "find_team", "get_current_time", "get_my_leave_balance", "get_system_stats", "get_usage_stats", "list_documents", "search_knowledge"].sort(),
+        ["calculate", "check_leave_dates", "find_team", "get_current_time", "get_my_leave_balance", "get_system_stats", "get_usage_stats", "list_documents", "propose_leave_request", "search_knowledge"].sort(),
       );
     });
   });

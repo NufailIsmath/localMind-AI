@@ -1,4 +1,6 @@
 import type {
+  LeaveEntryDto,
+  LeaveRequestDto,
   LeaveBalanceDto,
   LeavePersonSummaryDto,
   LeaveType,
@@ -121,6 +123,13 @@ export const api = {
     addEntry: (token: string, body: { userId: string; leaveType: LeaveType; startDate: string; endDate: string; days?: number; note?: string }) =>
       request<unknown>("/api/leave/manage/entries", { method: "POST", token, json: body }),
     cancelEntry: (token: string, id: string) => request<void>(`/api/leave/manage/entries/${id}`, { method: "DELETE", token }),
+    submitFromCard: (token: string, messageId: string, actionId: string) =>
+      request<LeaveEntryDto>("/api/leave/requests", { method: "POST", token, json: { messageId, actionId } }),
+    cancelMine: (token: string, id: string) => request<LeaveEntryDto>(`/api/leave/requests/${id}/cancel`, { method: "POST", token }),
+    requests: (token: string, status: "PENDING" | "DECIDED" = "PENDING") =>
+      request<LeaveRequestDto[]>(`/api/leave/manage/requests?status=${status}`, { token }),
+    decide: (token: string, id: string, approve: boolean, note?: string) =>
+      request<LeaveEntryDto>(`/api/leave/manage/requests/${id}/${approve ? "approve" : "reject"}`, { method: "POST", token, json: note ? { note } : {} }),
     holidays: (token: string, year: number) => request<{ date: string; name: string }[]>(`/api/leave/holidays?year=${year}`, { token }),
     addHoliday: (token: string, date: string, name: string) => request<void>("/api/leave/manage/holidays", { method: "POST", token, json: { date, name } }),
     removeHoliday: (token: string, date: string) => request<void>(`/api/leave/manage/holidays/${date}`, { method: "DELETE", token }),

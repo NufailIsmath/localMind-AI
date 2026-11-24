@@ -160,6 +160,20 @@ async function seedLeave(prisma: import("@prisma/client").PrismaClient, userIds:
     ],
     "hr@demo.local": [["04-06", "04-10", 10, "ANNUAL"]],
   };
+  // A request waiting in HR's inbox (in-app requests, option 3).
+  await prisma.leaveEntry.create({
+    data: {
+      userId: userIds["engineer@demo.local"]!,
+      leaveType: "ANNUAL",
+      startDate: d("12-14"),
+      endDate: d("12-15"),
+      halfDays: 4,
+      status: "PENDING",
+      source: "REQUEST",
+      note: "Moving house",
+      createdById: userIds["engineer@demo.local"]!,
+    },
+  });
   for (const [email, list] of Object.entries(entries)) {
     for (const [from, to, halfDays, leaveType, note] of list) {
       await prisma.leaveEntry.create({

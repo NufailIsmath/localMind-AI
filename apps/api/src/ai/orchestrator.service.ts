@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { ChatResponse, ChatStreamEvent, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@clbuddy/shared";
+import type { ChatActionDto, ChatResponse, ChatStreamEvent, RestrictedNoticeDto, Source, ToolExecutionSummary } from "@clbuddy/shared";
+import type { StoredAction } from "../modules/tools/tool.types.js";
 import type { StoredNotice } from "../modules/access/access-requests.service.js";
 import type { ChatRepository } from "../modules/chat/chat.repository.js";
 import type { ToolRegistry } from "../modules/tools/tool.registry.js";
@@ -127,6 +128,21 @@ class RestrictedCollector {
   }
 }
 
+/** Collects action cards prepared by tools during a turn (A1, A2…). */
+class ActionCollector {
+  private readonly actions: (StoredAction & { id: string })[] = [];
+  add(a: StoredAction): string {
+    const id = `A${this.actions.length + 1}`;
+    this.actions.push({ ...a, id });
+    return id;
+  }
+  all() {
+    return this.actions;
+  }
+}
+
+export const toActionDto = (a: StoredAction & { id: string }, request: ChatActionDto["request"] = null): ChatActionDto => ({ ...a, request });
+
 /** Client view of a notice: the document id stays on the server. */
 export const toNoticeDto = (n: StoredNotice, requestStatus: RestrictedNoticeDto["requestStatus"] = null): RestrictedNoticeDto => ({
   id: n.id,
@@ -181,6 +197,7 @@ export class Orchestrator {
 
     const sources = new SourceCollector();
     const restricted = new RestrictedCollector();
+    const actions = new ActionCollector();
     const executions: ToolExecutionSummary[] = [];
     const onToken = onEvent ? (delta: string) => emit({ type: "token", content: delta }) : undefined;
     let answer: string | undefined;
@@ -197,7 +214,7 @@ export class Orchestrator {
       messages.push({ role: "assistant", content: result.content, toolCalls: result.toolCalls });
       const accepted = result.toolCalls.slice(0, this.opts.maxToolCallsPerRound);
       for (const call of accepted) {
-        const summary = await this.executeTool(call, conversation.id, user, sources, restricted, signal, emit);
+        const summary = await this.executeTool(call, conversation.id, user, sources, restricted, actions, signal, emit);
         executions.push(summary.execution);
         messages.push({ role: "tool", toolName: call.name, content: summary.content, ...(call.id ? { toolCallId: call.id } : {}) });
       }
@@ -230,7 +247,7 @@ export class Orchestrator {
       await this.onInjectionDetected?.({ userId: user.userId, conversationId: conversation.id, documentId: s.documentId, flags: s.injectionFlags }).catch(() => {});
     }
     const notices = restricted.all();
-    const messageId = await this.repo.addAssistantMessage(conversation.id, answer, answerSources, notices);
+    const messageId = await this.repo.addAssistantMessage(conversation.id, answer, answerSources, notices, actions.all());
     await this.repo.linkToolExecutions(executions.map((e) => e.id), messageId);
 
     const response: ChatResponse = {
@@ -239,6 +256,7 @@ export class Orchestrator {
       answer,
       sources: answerSources,
       restricted: notices.map((n) => toNoticeDto(n)),
+      actions: actions.all().map((a) => toActionDto(a)),
       toolExecutions: executions,
     };
     this.log.info(
@@ -261,6 +279,7 @@ export class Orchestrator {
     user: AccessPrincipal,
     sources: SourceCollector,
     restricted: RestrictedCollector,
+    actions: ActionCollector,
     signal: AbortSignal,
     emit: (e: ChatStreamEvent) => void,
   ): Promise<{ execution: ToolExecutionSummary; content: string }> {
@@ -275,6 +294,7 @@ export class Orchestrator {
       signal,
       addSources: (chunks, query) => sources.add(chunks, query),
       addRestricted: (matches) => restricted.add(matches),
+      addAction: (a) => actions.add(a),
     });
 
     const execution: ToolExecutionSummary = {

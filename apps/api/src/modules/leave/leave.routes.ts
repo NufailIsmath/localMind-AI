@@ -27,7 +27,59 @@ export const leaveRoutes: FastifyPluginAsync = async (app) => {
     return leave.listHolidays(year);
   });
 
+  /**
+   * Submit a leave request. Either from a chat card ({ messageId, actionId }:
+   * the server re-reads the card the assistant prepared and submits exactly
+   * that) or directly ({ leaveType, startDate, endDate, note }).
+   */
+  app.post("/requests", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const body = parse(
+      z.union([
+        z.object({ messageId: z.uuid(), actionId: z.string().regex(/^A\d{1,3}$/) }),
+        z.object({ leaveType: z.enum(LEAVE_TYPES).default("ANNUAL"), startDate: DATE, endDate: DATE, note: z.string().trim().max(500).optional() }),
+      ]),
+      req.body,
+    );
+    if ("messageId" in body) {
+      const msg = await app.services.prisma.message.findFirst({
+        where: { id: body.messageId, role: "ASSISTANT", conversation: { userId: req.principal.userId } },
+        select: { actions: true },
+      });
+      const action = ((msg?.actions as { id: string; kind: string; leaveType: (typeof LEAVE_TYPES)[number]; startDate: string; endDate: string; note: string | null }[] | null) ?? []).find(
+        (a) => a.id === body.actionId && a.kind === "leave_request",
+      );
+      if (!action) return reply.code(404).send({ error: "NOT_FOUND", message: "Request card not found" });
+      return reply.code(201).send(
+        await leave.createRequest(req.principal.userId, { ...action, actionRef: `${body.messageId}:${body.actionId}` }),
+      );
+    }
+    return reply.code(201).send(await leave.createRequest(req.principal.userId, body));
+  });
+
+  /** Withdraw a pending request / cancel your own future leave. */
+  app.post("/requests/:id/cancel", async (req) => {
+    const { id } = parse(UuidParam, req.params);
+    return leave.cancelOwn(req.principal.userId, id);
+  });
+
   // ----- HR team / admins -----
+  app.get("/manage/requests", async (req) => {
+    const { status } = parse(z.object({ status: z.enum(["PENDING", "DECIDED"]).default("PENDING") }), req.query);
+    return leave.listRequests(req.principal, status);
+  });
+
+  app.post("/manage/requests/:id/approve", async (req) => {
+    const { id } = parse(UuidParam, req.params);
+    const { note } = parse(z.object({ note: z.string().trim().max(500).optional() }), req.body ?? {});
+    return leave.decide(req.principal, id, true, note);
+  });
+
+  app.post("/manage/requests/:id/reject", async (req) => {
+    const { id } = parse(UuidParam, req.params);
+    const { note } = parse(z.object({ note: z.string().trim().max(500).optional() }), req.body ?? {});
+    return leave.decide(req.principal, id, false, note);
+  });
+
   app.get("/manage/people", async (req) => {
     const { year } = parse(z.object({ year: YEAR }), req.query);
     return leave.people(req.principal, year);
