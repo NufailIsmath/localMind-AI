@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -22,6 +23,11 @@ const csp = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // Self-contained server bundle, only for the Docker image (apps/web/Dockerfile sets NEXT_OUTPUT);
+  // `next start` keeps working for local development.
+  ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
+  // Monorepo: trace dependencies from the repository root (workspace packages, hoisted node_modules).
+  outputFileTracingRoot: path.join(__dirname, "../.."),
   reactStrictMode: true,
   poweredByHeader: false,
   async headers() {

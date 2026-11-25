@@ -1,0 +1,148 @@
+# CL Buddy: the whole stack in Docker.
+#
+#   cp .env.example .env        # then set JWT_SECRET (openssl rand -base64 48)
+#   docker compose up -d --build
+#   open http://localhost:3000  # the first account you create becomes the admin
+#
+# First start downloads the AI models (~5.5 GB) — watch it with:
+#   docker compose logs -f ollama-pull
+#
+# Variants (details in docs/docker.md):
+#   NVIDIA GPU:      docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#   Ollama on host   (recommended on Mac): set OLLAMA_HOST=http://host.docker.internal:11434 in .env, then
+#                    docker compose up -d --build postgres qdrant api web
+#   No models (demo with the rule-based mock):
+#                    OLLAMA_HOST=http://mock-ollama:11434 docker compose --profile mock up -d --build postgres qdrant mock-ollama api web
+
+name: clbuddy-docker
+
+x-api-env: &api-env
+  NODE_ENV: production
+  API_HOST: 0.0.0.0
+  API_PORT: "4000"
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (openssl rand -base64 48)}
+  JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+  ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-first-user}
+  RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: postgresql://clbuddy:${POSTGRES_PASSWORD:-clbuddy_dev}@postgres:5432/clbuddy?schema=public
+  QDRANT_URL: http://qdrant:6333
+  QDRANT_COLLECTION: ${QDRANT_COLLECTION:-documents}
+  OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+  CHAT_MODEL: ${CHAT_MODEL:-qwen3:8b}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+  EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
+  OLLAMA_THINK: ${OLLAMA_THINK:-false}
+  OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-8192}
+  RETRIEVAL_SCORE_THRESHOLD: ${RETRIEVAL_SCORE_THRESHOLD:-0.35}
+  RESTRICTED_NOTICE_SCORE_THRESHOLD: ${RESTRICTED_NOTICE_SCORE_THRESHOLD:-0.55}
+  ACCESS_DENIAL_MODE: ${ACCESS_DENIAL_MODE:-acknowledge}
+  CLASSIFICATION_SUGGESTIONS: ${CLASSIFICATION_SUGGESTIONS:-model}
+  LEAVE_MANAGER_GROUP: ${LEAVE_MANAGER_GROUP:-HR}
+  HR_SYNC_ENABLED: ${HR_SYNC_ENABLED:-false}
+  HR_API_BASE_URL: ${HR_API_BASE_URL:-https://hr-api.example.com/v1}
+  HR_API_TOKEN: ${HR_API_TOKEN:-}
+  UPLOAD_DIR: /app/apps/api/data/uploads
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clbuddy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clbuddy_dev}
+      POSTGRES_DB: clbuddy
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clbuddy -d clbuddy"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    restart: unless-stopped
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    # Exposed to the host (127.0.0.1 only) so you can run `ollama` commands against it.
+    ports:
+      - "127.0.0.1:11434:11434"
+
+  # One-shot: downloads the models into the ollama volume (skipped instantly if already there).
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on: [ollama]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e  # a failed download must fail this step, not report "ready"
+        until ollama list >/dev/null 2>&1; do echo "waiting for ollama…"; sleep 2; done
+        ollama pull ${CHAT_MODEL:-qwen3:8b}
+        ollama pull ${EMBEDDING_MODEL:-nomic-embed-text}
+        echo "Models ready."
+    restart: "no"
+
+  # Rule-based stand-in for Ollama (no downloads, no GPU) — for demos and tests only.
+  mock-ollama:
+    profiles: ["mock"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: clbuddy-api:local
+    working_dir: /app/apps/api
+    command: ["npx", "tsx", "scripts/mock-ollama.ts"]
+    environment:
+      MOCK_OLLAMA_HOST: 0.0.0.0
+      MOCK_OLLAMA_PORT: "11434"
+      CHAT_MODEL: ${CHAT_MODEL:-qwen3:8b}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: clbuddy-api:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    environment: *api-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # lets the API reach Ollama running on your machine
+    volumes:
+      - uploads:/app/apps/api/data/uploads
+    ports:
+      - "127.0.0.1:4000:4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Where the BROWSER reaches the API (baked in at build time).
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:4000}
+    image: clbuddy-web:local
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  ollama_data:
+  uploads:

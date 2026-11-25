@@ -154,7 +154,18 @@ RAG is exposed *as a tool* (`search_knowledge`), so the model decides when docum
 
 More detail and design decisions: [`docs/architecture.md`](docs/architecture.md).
 
-## Quick start
+## Quick start with Docker (everything in containers)
+
+```bash
+cp .env.example .env              # set JWT_SECRET (openssl rand -base64 48)
+docker compose up -d --build      # web, API, Postgres, Qdrant, Ollama + model download
+docker compose logs -f ollama-pull   # wait for "Models ready." (~5 GB on first run)
+open http://localhost:3000        # the first account becomes the admin
+```
+
+GPU, Mac/native Ollama, mock mode and troubleshooting: [`docs/docker.md`](docs/docker.md).
+
+## Quick start (for development)
 
 ### 1. Prerequisites
 

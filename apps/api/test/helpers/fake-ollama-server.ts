@@ -18,6 +18,8 @@ export interface FakeOllamaOptions {
   dimensions?: number;
   /** Artificial delay between streamed tokens. */
   tokenDelayMs?: number;
+  /** Interface to listen on (0.0.0.0 inside Docker). */
+  host?: string;
 }
 
 export interface FakeOllama {
@@ -342,7 +344,7 @@ export async function startFakeOllama(opts: FakeOllamaOptions = {}, port = 0): P
     }
   });
 
-  await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(port, opts.host ?? "127.0.0.1", resolve));
   const { port: actual } = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${actual}`,
