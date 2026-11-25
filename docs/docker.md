@@ -69,14 +69,14 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 
 ```bash
 ollama pull qwen3:8b && ollama pull nomic-embed-text
-echo "OLLAMA_HOST=http://host.docker.internal:11434" >> .env
+echo "DOCKER_OLLAMA_HOST=http://host.docker.internal:11434" >> .env
 docker compose up -d --build postgres qdrant api web     # skips the Ollama containers
 ```
 
 **Mock mode (no models)**
 
 ```bash
-OLLAMA_HOST=http://mock-ollama:11434 RETRIEVAL_SCORE_THRESHOLD=0.05 RESTRICTED_NOTICE_SCORE_THRESHOLD=0.1 \
+DOCKER_OLLAMA_HOST=http://mock-ollama:11434 RETRIEVAL_SCORE_THRESHOLD=0.05 RESTRICTED_NOTICE_SCORE_THRESHOLD=0.1 \
   docker compose --profile mock up -d --build postgres qdrant mock-ollama api web
 ```
 
@@ -120,7 +120,8 @@ Published ports are bound to **127.0.0.1**, so nothing is exposed to your networ
 | Symptom | Fix |
 |---|---|
 | `JWT_SECRET` error on `docker compose up` | Set it in `.env` (step 1). |
-| Health shows `ollama: ok: false` | The models are still downloading (`docker compose logs -f ollama-pull`), or `OLLAMA_HOST` points at an Ollama that isn't running. |
+| Health shows `ollama: ok: false`, or chat says "cannot reach Ollama" | Check `docker compose ps`: is `ollama` running? Are the models downloaded (`docker compose logs ollama-pull`)? If you use your own Ollama, `DOCKER_OLLAMA_HOST` must be `http://host.docker.internal:11434`, never `localhost`. Then `docker compose up -d api`. |
+| Documents show **failed** after seeding without a model | Fix the model first, then run the seed again: failed documents are re-uploaded and re-indexed automatically. |
 | Answers are very slow | No GPU in use: use the NVIDIA override, native Ollama on Mac, or `CHAT_MODEL=qwen3:4b`. |
 | Browser can't reach the API | The web image has the API address baked in at build time. If you serve it elsewhere, set `PUBLIC_API_URL` and `CORS_ORIGINS` in `.env`, then rebuild: `docker compose up -d --build web api`. |
 | Port 3000/4000 already in use | Stop the other app, or change the `ports:` mapping in `docker-compose.yml`. |

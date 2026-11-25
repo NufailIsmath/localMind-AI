@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config/env.js";
 import { retry } from "./lib/async.js";
@@ -13,6 +14,14 @@ async function main() {
   } catch (err) {
     app.log.fatal(`Cannot initialise Qdrant at ${config.qdrant.url}: ${errorMessage(err)}`);
     process.exit(1);
+  }
+
+  // Inside a container, "localhost" is the container itself — a classic misconfiguration.
+  if (existsSync("/.dockerenv") && /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(config.ollama.host)) {
+    app.log.warn(
+      `OLLAMA_HOST is ${config.ollama.host}, but the API is running inside Docker, where localhost is this container. ` +
+        "Use http://ollama:11434 (the compose service) or http://host.docker.internal:11434 (Ollama on your computer).",
+    );
   }
 
   // Warn (don't fail) when Ollama is down: the API is still useful for browsing history.

@@ -9,10 +9,10 @@
 #
 # Variants (details in docs/docker.md):
 #   NVIDIA GPU:      docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
-#   Ollama on host   (recommended on Mac): set OLLAMA_HOST=http://host.docker.internal:11434 in .env, then
+#   Ollama on host   (recommended on Mac): set DOCKER_OLLAMA_HOST=http://host.docker.internal:11434 in .env, then
 #                    docker compose up -d --build postgres qdrant api web
 #   No models (demo with the rule-based mock):
-#                    OLLAMA_HOST=http://mock-ollama:11434 docker compose --profile mock up -d --build postgres qdrant mock-ollama api web
+#                    DOCKER_OLLAMA_HOST=http://mock-ollama:11434 docker compose --profile mock up -d --build postgres qdrant mock-ollama api web
 
 name: clbuddy-docker
 
@@ -29,7 +29,9 @@ x-api-env: &api-env
   DATABASE_URL: postgresql://clbuddy:${POSTGRES_PASSWORD:-clbuddy_dev}@postgres:5432/clbuddy?schema=public
   QDRANT_URL: http://qdrant:6333
   QDRANT_COLLECTION: ${QDRANT_COLLECTION:-documents}
-  OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+  # Separate from OLLAMA_HOST in .env (that one is for `npm run dev`, where Ollama is on localhost;
+  # inside a container "localhost" is the container itself).
+  OLLAMA_HOST: ${DOCKER_OLLAMA_HOST:-http://ollama:11434}
   CHAT_MODEL: ${CHAT_MODEL:-qwen3:8b}
   EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
   EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
