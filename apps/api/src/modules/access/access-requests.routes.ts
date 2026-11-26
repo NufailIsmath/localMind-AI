@@ -12,7 +12,8 @@ export const accessRequestRoutes: FastifyPluginAsync = async (app) => {
       z.object({ messageId: z.uuid(), noticeId: z.string().regex(/^R\d{1,3}$/), note: z.string().max(500).optional() }),
       req.body,
     );
-    return reply.code(201).send(await accessRequests.create(req.principal, body));
+    const note = app.services.moderation.cleanNote(body.note);
+    return reply.code(201).send(await accessRequests.create(req.principal, { ...body, note }));
   });
 
   app.get("/", async (req) => accessRequests.list(req.principal));

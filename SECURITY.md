@@ -36,7 +36,8 @@ Two assumptions drive the design:
 | Actions with side effects | The model can only **propose** (e.g. `propose_leave_request` returns a card); only an authenticated user click submits, and the server re-reads the exact card it prepared. Approvals require the HR role and can't be self-approved; per-person locking prevents double-booking races. | `modules/leave/`, `LeaveRequestCard.tsx` |
 | HR-system sync | Outbound only (no inbound endpoint yet); off by default; placeholder `example.com` URL; bearer token from env, never logged; HTTPS expected in production; idempotency keys make retries safe; failures visible to admins only | `modules/integrations/hr/` |
 | Personal (leave) data | Self-service tools have no user parameter; identity comes from the session; management needs the HR group or admin; CSV import validated all-or-nothing; every change audited | `modules/leave/`, `tools/leave.tools.ts` |
-| Audit | Sharing, access, grants, requests, group/user changes, injection detections, notice-limit hits | `AuditEvent` table, admin panel |
+| Content guardrails | Local, rule-based checks **before** the model (explicit content and slurs never reach it, are never stored, and get a kind, fixed reply; strong language is masked and the user gets a gentle reminder, or `PROFANITY_POLICY=block`), **after** it (answers are masked, or replaced if explicit, so a document can't make it swear), and on notes people send each other (400 if explicit). Normalises the usual dodges (leetspeak, f*ck, fuuuck, f.u.c.k, look-alike and invisible characters). Possible self-harm gets a supportive reply with crisis lines, never a refusal, and isn't audited. Tone (flirting, gossip, insults aimed at someone) is handled by the system prompt. | `modules/moderation/`, `ai/prompt.service.ts` |
+| Audit | Sharing, access, grants, requests, group/user changes, injection detections, notice-limit hits, guardrail blocks and warnings (category only, never the text) | `AuditEvent` table, admin panel |
 
 ## How it's tested
 
@@ -46,6 +47,7 @@ Two assumptions drive the design:
   - **Other attack classes:** mass assignment, path traversal and bidi filenames, CORS, security headers, body limits, expired tokens, sign-up enumeration.
 - `access-control.test.ts`: a 5-person × 5-document matrix, checked through Qdrant alone and through the full path. It is mutation-tested: breaking either layer fails the suite.
 - `restricted-notices.test.ts`, `classification-suggestions.test.ts`: leakage, forgery and rate-limit cases.
+- `apps/api/test/unit/moderation.test.ts`, `test/integration/moderation.test.ts`: evasion variants, a workplace false-positive list ("sexual harassment policy", "Scunthorpe", "summa cum laude", "flame retardant"…), **zero flags across every document and file in the repository**, blocked messages never reaching the model or the database, masking of model output steered by a planted document, notes, and each policy setting.
 - `apps/web/e2e/security.spec.ts`: stored-XSS payloads in filenames, document text and model output render as text, with no injected elements, no clickable links and no alert dialogs.
 
 ## Assessment log
@@ -87,6 +89,7 @@ Also hardened proactively: the prompt-injection detector, bidi/zero-width filena
 - **JWTs live in `localStorage`.** XSS is mitigated by React escaping, the renderer design and CSP, but an httpOnly-cookie session would be stronger.
 - **Stateless JWTs can't be revoked before expiry.** Deleting the user, or changing their role/clearance, takes effect immediately because the profile is reloaded per request; token theft would need a shorter `JWT_EXPIRES_IN` or a denylist.
 - **Rate limits and the notice cap are per process** (in memory). Use a shared store if you run several API instances.
+- **Content guardrails are word lists plus a prompt, not a classifier.** They catch the common cases and their obfuscations, but not every euphemism, other languages, or an explicit request phrased in clean words; those rely on the model following the professional-conduct rules. While streaming, words appear briefly before the final (masked) answer replaces them. For stricter needs, put a moderation model (e.g. Llama Guard via Ollama) in front of the same `ModerationService` interface.
 - **Classification suggestions are heuristics.** A document that evades both the rules and the model gets no suggestion; the uploader's label stands.
 
 ## Reporting

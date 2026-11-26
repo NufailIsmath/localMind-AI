@@ -102,6 +102,7 @@ Reading balances from the HR system later is also possible: leave reads go throu
 - **Streaming** — tokens and live tool activity over Server-Sent Events.
 - **Conversation memory** — multi-turn chats persisted in PostgreSQL.
 - **Document-level access control** — documents are private, shared with the whole organisation, or shared with groups (HR, Executives…), and classified Public → Internal → Confidential → Restricted. Users have a clearance level and group memberships. An intern asking for the CEO's salary never retrieves the compensation file, so the model never sees it. Enforced in Qdrant *and* re-checked in PostgreSQL, outside the model.
+- **Content guardrails** — explicit content and hate slurs are blocked before they reach the model (with a kind reply that still helps someone reporting a problem); strong language gets a gentle reminder and is never echoed; answers and notes are filtered too; flirting, gossip and insulting drafts are steered back to professional; anyone who sounds like they're in crisis gets support, not a telling-off. See [Content guardrails](#content-guardrails).
 - **Observability** — every tool execution is audited (arguments, status, duration); structured logs for ingestion and chat turns.
 - **Fault tolerance** — timeouts, retries with backoff for transient Ollama failures, tool timeouts, bounded tool loops, graceful degradation.
 - **Measurable RAG** — an evaluation harness reports Hit@k, Precision@k, MRR, answer accuracy and citation accuracy over a labelled question set.
@@ -365,6 +366,23 @@ export const weatherTool = defineTool({
 - **Auth**: scrypt password hashing, JWT (HS256) with expiry, users re-loaded on every request (deleted users lose access immediately), rate-limited login/registration/chat/upload, uniform login errors with timing equalisation.
 - **Local infrastructure**: Docker publishes Qdrant/PostgreSQL/Ollama on `127.0.0.1` only — Qdrant has no auth by default and Ollama has none at all.
 
+## Content guardrails
+
+CL Buddy is a colleague, so it keeps things workplace-appropriate. Checks run locally on the server, before and after the model, so they work with any model and can't be talked out of by a prompt.
+
+| What | Example | What happens |
+|---|---|---|
+| Explicit / sexual | "send me nudes" | **Blocked** before the model. The message is stored as *[Message hidden]* and the buddy replies kindly, offering to help report anything that happened at work. |
+| Hate slurs | slurs against a group | **Blocked**, same handling; offers help raising it with HR. |
+| Strong language | "this f***ing printer" | `PROFANITY_POLICY=warn` (default): answered, with a gentle reminder; the words are masked before the model sees them and never echoed. `block` refuses; `allow` passes. |
+| Insults at someone | "email John that he's a useless idiot" | The model won't write abuse; it offers a firm, professional version instead. Someone *reporting* abuse is supported. |
+| Unprofessional chat | flirting, romance role-play, gossip | Declined lightly and steered back to work (system prompt). Questions *about* policies (harassment, relationships at work, dress code) are answered normally. |
+| Possible self-harm | "I want to end my life" | A caring reply with emergency and crisis-line pointers and an offer to help, never a refusal; not audited. |
+| The model's own answer | a document tells the model to swear | Masked, or replaced if explicit. |
+| Notes to other people | leave and access-request notes, HR decisions | Explicit/hateful → `400 CONTENT_NOT_ALLOWED`; strong language masked. |
+
+Detection normalises the usual dodges (`f*ck`, `sh!t`, `fuuuck`, `f.u.c.k`, accents, Cyrillic look-alikes, zero-width characters) and matches whole words against a conservative list, so "assistant", "class", "Scunthorpe", "summa cum laude" or "sexual harassment policy" aren't flagged. A test checks for zero flags across every document in the repo. Add your own words with `MODERATION_EXTRA_TERMS_FILE` (one `category:term` per line; `term*` matches a prefix). Blocks and warnings are audited by category, never with the text.
+
 ## Security testing
 
 See [`SECURITY.md`](SECURITY.md) for the threat model, controls and assessment log. In short:
@@ -437,6 +455,9 @@ All settings are environment variables validated at startup (see [`.env.example`
 | `HR_SYNC_ENABLED` / `HR_API_BASE_URL` / `HR_API_TOKEN` | `false` / `https://hr-api.example.com/v1` / – | Push leave changes to the external HR system (see `docs/hr-integration.md`) |
 | `CLASSIFICATION_SUGGESTIONS` | `model` | `model` (rules + local model), `rules`, or `off` |
 | `RESTRICTED_NOTICE_HOURLY_LIMIT` | `30` | Per-user cap on "that's confidential" notices |
+| `MODERATION_ENABLED` | `true` | Content guardrails on chat, answers and notes |
+| `PROFANITY_POLICY` | `warn` | Strong language: `warn` (answer + reminder, masked), `block`, or `allow` |
+| `MODERATION_EXTRA_TERMS_FILE` | – | Extra words, one `category:term` per line (`sexual`, `hate`, `profanity`, `insult`) |
 
 ## Project structure
 

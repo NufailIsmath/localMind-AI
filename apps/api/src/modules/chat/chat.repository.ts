@@ -11,7 +11,7 @@ import { notFound } from "../../lib/errors.js";
 import type { StoredNotice } from "../access/access-requests.service.js";
 import { toActionDto, toNoticeDto } from "../../ai/orchestrator.service.js";
 import type { StoredAction } from "../tools/tool.types.js";
-import type { ChatActionDto } from "@clbuddy/shared";
+import type { ChatActionDto, ModerationNoticeDto } from "@clbuddy/shared";
 
 export interface HistoryMessage {
   role: "USER" | "ASSISTANT";
@@ -32,7 +32,14 @@ export interface ChatRepository {
   resolveConversation(userId: string, conversationId: string | undefined, title: string): Promise<{ id: string; created: boolean }>;
   loadHistory(conversationId: string, limit: number): Promise<HistoryMessage[]>;
   addUserMessage(conversationId: string, content: string): Promise<string>;
-  addAssistantMessage(conversationId: string, content: string, sources: Source[], restricted?: StoredNotice[], actions?: (StoredAction & { id: string })[]): Promise<string>;
+  addAssistantMessage(
+    conversationId: string,
+    content: string,
+    sources: Source[],
+    restricted?: StoredNotice[],
+    actions?: (StoredAction & { id: string })[],
+    moderation?: ModerationNoticeDto | null,
+  ): Promise<string>;
   recordToolExecution(conversationId: string, record: ToolExecutionRecord): Promise<void>;
   linkToolExecutions(ids: string[], messageId: string): Promise<void>;
 }
@@ -76,6 +83,7 @@ export class PrismaChatRepository implements ChatRepository {
     sources: Source[],
     restricted: StoredNotice[] = [],
     actions: (StoredAction & { id: string })[] = [],
+    moderation: ModerationNoticeDto | null = null,
   ): Promise<string> {
     const [msg] = await this.prisma.$transaction([
       this.prisma.message.create({
@@ -86,6 +94,7 @@ export class PrismaChatRepository implements ChatRepository {
           sources: sources as unknown as Prisma.InputJsonValue,
           ...(restricted.length ? { restricted: restricted as unknown as Prisma.InputJsonValue } : {}),
           ...(actions.length ? { actions: actions as unknown as Prisma.InputJsonValue } : {}),
+          ...(moderation ? { moderation: moderation as unknown as Prisma.InputJsonValue } : {}),
         },
         select: { id: true },
       }),
@@ -155,6 +164,7 @@ export class PrismaChatRepository implements ChatRepository {
             toNoticeDto(n, statuses.get(`${m.id}:${n.id}`) ?? null),
           ),
           actions: storedActions(m).map((a) => toActionDto(a, requests.get(`${m.id}:${a.id}`) ?? null)),
+          moderation: (m.moderation as unknown as ModerationNoticeDto | null) ?? null,
           toolExecutions: m.toolExecutions.map(
             (t): ToolExecutionSummary => ({
               id: t.id,

@@ -16,6 +16,15 @@ import {
 } from "./prompt.service.js";
 import type { ChatMessage, LlmService, ToolCall } from "./types.js";
 import { detectInjection } from "../rag/injection-detector.js";
+import type { ModerationService } from "../modules/moderation/moderation.service.js";
+import type { ModerationNoticeDto } from "@clbuddy/shared";
+
+export interface ModerationEvent {
+  userId: string;
+  conversationId: string;
+  action: "blocked" | "warned" | "output_filtered";
+  category: string;
+}
 
 export interface OrchestratorOptions {
   maxToolRounds: number;
@@ -172,6 +181,10 @@ export class Orchestrator {
     private readonly log: OrchestratorLogger,
     /** Called when retrieved passages look like prompt-injection attempts (for auditing). */
     private readonly onInjectionDetected?: (e: { userId: string; conversationId: string; documentId: string; flags: string[] }) => Promise<void>,
+    /** Content guardrails applied to the user's message and the final answer. */
+    private readonly moderation?: ModerationService,
+    /** Called when the guardrails step in (for auditing; never receives the message text). */
+    private readonly onModeration?: (e: ModerationEvent) => Promise<void>,
   ) {}
 
   async run(input: ChatTurnInput): Promise<ChatResponse> {
@@ -180,10 +193,25 @@ export class Orchestrator {
     const emit = (e: ChatStreamEvent) => onEvent?.(e);
     const started = Date.now();
 
-    const conversation = await this.repo.resolveConversation(user.userId, input.conversationId, conversationTitle(input.message));
+    // Guardrails run before anything is stored or sent to the model.
+    const verdict = this.moderation?.checkInput(input.message);
+    const userMessage = verdict?.text ?? input.message;
+
+    const title = verdict?.action === "block" ? "New conversation" : conversationTitle(userMessage);
+    const conversation = await this.repo.resolveConversation(user.userId, input.conversationId, title);
     const history = await this.repo.loadHistory(conversation.id, this.opts.historyMessageLimit);
-    await this.repo.addUserMessage(conversation.id, input.message);
+    await this.repo.addUserMessage(conversation.id, userMessage);
     emit({ type: "conversation", conversationId: conversation.id });
+
+    const audit = (action: ModerationEvent["action"], category: string) =>
+      this.onModeration?.({ userId: user.userId, conversationId: conversation.id, action, category }).catch(() => {});
+    if (verdict?.reply) {
+      // Blocked, or the user may be in distress: answer directly, without the model.
+      if (verdict.action === "block") await audit("blocked", verdict.category!);
+      this.log.info({ conversationId: conversation.id, moderation: verdict.action, category: verdict.category }, "chat turn answered by guardrails");
+      return this.finish(conversation.id, verdict.reply, [], [], [], [], verdict.notice ?? null, emit);
+    }
+    if (verdict?.action === "warn") await audit("warned", verdict.category!);
 
     const toolSpecs = this.tools.specs(user.role);
     const messages: ChatMessage[] = [
@@ -192,7 +220,8 @@ export class Orchestrator {
         (h): ChatMessage =>
           h.role === "USER" ? { role: "user", content: h.content } : { role: "assistant", content: stripCitations(h.content) },
       ),
-      { role: "user", content: input.message },
+      ...(verdict?.systemNotes ?? []).map((content): ChatMessage => ({ role: "system", content })),
+      { role: "user", content: userMessage },
     ];
 
     const sources = new SourceCollector();
@@ -240,25 +269,19 @@ export class Orchestrator {
       answer = cleanAssistantContent(final.content);
     }
     if (!answer) answer = "I wasn't able to produce an answer. Please try rephrasing your question.";
+    const checked = this.moderation?.checkOutput(answer);
+    if (checked?.changed) {
+      answer = checked.text;
+      this.log.warn({ conversationId: conversation.id, category: checked.category }, "answer adjusted by content guardrails");
+      await audit("output_filtered", checked.category ?? "unknown");
+    }
 
     const answerSources = sources.forAnswer(answer);
     for (const s of sources.flagged()) {
       this.log.warn({ conversationId: conversation.id, documentId: s.documentId, flags: s.injectionFlags }, "possible prompt injection in retrieved passage");
       await this.onInjectionDetected?.({ userId: user.userId, conversationId: conversation.id, documentId: s.documentId, flags: s.injectionFlags }).catch(() => {});
     }
-    const notices = restricted.all();
-    const messageId = await this.repo.addAssistantMessage(conversation.id, answer, answerSources, notices, actions.all());
-    await this.repo.linkToolExecutions(executions.map((e) => e.id), messageId);
-
-    const response: ChatResponse = {
-      conversationId: conversation.id,
-      messageId,
-      answer,
-      sources: answerSources,
-      restricted: notices.map((n) => toNoticeDto(n)),
-      actions: actions.all().map((a) => toActionDto(a)),
-      toolExecutions: executions,
-    };
+    const response = await this.finish(conversation.id, answer, answerSources, restricted.all(), actions.all(), executions, verdict?.notice ?? null, emit);
     this.log.info(
       {
         conversationId: conversation.id,
@@ -269,6 +292,32 @@ export class Orchestrator {
       },
       "chat turn completed",
     );
+    return response;
+  }
+
+  /** Stores the answer and sends the final event. */
+  private async finish(
+    conversationId: string,
+    answer: string,
+    sources: Source[],
+    notices: StoredNotice[],
+    actions: (StoredAction & { id: string })[],
+    executions: ToolExecutionSummary[],
+    moderation: ModerationNoticeDto | null,
+    emit: (e: ChatStreamEvent) => void,
+  ): Promise<ChatResponse> {
+    const messageId = await this.repo.addAssistantMessage(conversationId, answer, sources, notices, actions, moderation);
+    await this.repo.linkToolExecutions(executions.map((e) => e.id), messageId);
+    const response: ChatResponse = {
+      conversationId,
+      messageId,
+      answer,
+      sources,
+      restricted: notices.map((n) => toNoticeDto(n)),
+      actions: actions.map((a) => toActionDto(a)),
+      toolExecutions: executions,
+      moderation,
+    };
     emit({ type: "done", response });
     return response;
   }

@@ -214,6 +214,8 @@ model Message {
   restricted     Json?
   /// Actions the assistant prepared for the user to confirm (e.g. a leave request)
   actions        Json?
+  /// Content-guardrail notice shown with an answer (ModerationNoticeDto)
+  moderation     Json?
   createdAt      DateTime    @default(now())
 
   conversation   Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)

@@ -231,6 +231,15 @@ export interface ChatRequest {
   message: string;
 }
 
+export type ModerationCategory = "sexual" | "hate" | "profanity" | "harassment" | "self_harm";
+
+/** Shown with an answer when the content guardrails stepped in (a reminder, or why a message wasn't sent). */
+export interface ModerationNoticeDto {
+  action: "warn" | "block";
+  category: ModerationCategory;
+  message: string;
+}
+
 export interface ChatResponse {
   conversationId: string;
   messageId: string;
@@ -239,6 +248,7 @@ export interface ChatResponse {
   restricted: RestrictedNoticeDto[];
   actions: ChatActionDto[];
   toolExecutions: ToolExecutionSummary[];
+  moderation: ModerationNoticeDto | null;
 }
 
 export interface MessageDto {
@@ -249,6 +259,7 @@ export interface MessageDto {
   restricted: RestrictedNoticeDto[];
   actions: ChatActionDto[];
   toolExecutions: ToolExecutionSummary[];
+  moderation: ModerationNoticeDto | null;
   createdAt: string;
 }
 

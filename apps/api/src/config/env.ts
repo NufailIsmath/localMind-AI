@@ -75,6 +75,13 @@ const EnvSchema = z
     MAX_UPLOAD_MB: z.coerce.number().positive().default(20),
     UPLOAD_DIR: z.string().default("./data/uploads"),
 
+    /** Content guardrails (explicit content, hate speech, strong language) on chat and notes. */
+    MODERATION_ENABLED: bool.default(true),
+    /** Strong language: warn (answer, mask it, show a reminder), block (refuse), allow. */
+    PROFANITY_POLICY: z.enum(["warn", "block", "allow"]).default("warn"),
+    /** Optional file of extra terms, one "category:term" per line (see docs). */
+    MODERATION_EXTRA_TERMS_FILE: z.string().optional(),
+
     MAX_TOOL_ROUNDS: int(5, 1),
     MAX_TOOL_CALLS_PER_ROUND: int(5, 1),
     TOOL_TIMEOUT_MS: int(15_000, 100),
@@ -98,6 +105,7 @@ export interface AppConfig {
   hrSync: { enabled: boolean; baseUrl: string; token?: string; timeoutMs: number; intervalMs: number; maxAttempts: number };
   auth: { jwtSecret: string; jwtExpiresIn: string; registration: "open" | "closed" | "first-user" };
   databaseUrl: string;
+  moderation: { enabled: boolean; profanityPolicy: "warn" | "block" | "allow"; extraTermsFile?: string };
   qdrant: { url: string; apiKey?: string; collection: string };
   ollama: {
     host: string;
@@ -155,6 +163,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     auth: { jwtSecret: e.JWT_SECRET, jwtExpiresIn: e.JWT_EXPIRES_IN, registration: e.ALLOW_REGISTRATION },
     databaseUrl: e.DATABASE_URL,
+    moderation: { enabled: e.MODERATION_ENABLED, profanityPolicy: e.PROFANITY_POLICY, extraTermsFile: e.MODERATION_EXTRA_TERMS_FILE || undefined },
     qdrant: { url: e.QDRANT_URL, apiKey: e.QDRANT_API_KEY || undefined, collection: e.QDRANT_COLLECTION },
     ollama: {
       host: e.OLLAMA_HOST,

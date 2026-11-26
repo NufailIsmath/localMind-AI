@@ -17,6 +17,8 @@ const EXAMPLES = [
   "What does the handbook say about working from home?",
 ];
 
+const HIDDEN_MESSAGE = "[Message hidden: it didn't meet the content guidelines]";
+
 interface Draft {
   content: string;
   executions: ToolExecutionSummary[];
@@ -31,7 +33,7 @@ function AssistantMessage({
   onNoticeStatus,
   onActionChange,
 }: {
-  message: Pick<MessageDto, "id" | "content" | "sources" | "toolExecutions" | "restricted" | "actions">;
+  message: Pick<MessageDto, "id" | "content" | "sources" | "toolExecutions" | "restricted" | "actions" | "moderation">;
   token: string;
   question?: string;
   onSend: (text: string) => void;
@@ -45,6 +47,11 @@ function AssistantMessage({
   };
   return (
     <article className="msg msg-assistant">
+      {message.moderation && (
+        <p className={`moderation-notice moderation-${message.moderation.action}`} role="note" data-testid="moderation-notice">
+          <span aria-hidden="true">{message.moderation.action === "block" ? "🛑" : "💬"}</span> {message.moderation.message}
+        </p>
+      )}
       <ToolActivity executions={message.toolExecutions} />
       <Markdown text={message.content} onCite={cite} />
       {(message.actions ?? []).map((a) =>
@@ -145,6 +152,7 @@ export function ChatView({
         restricted: [],
         actions: [],
         toolExecutions: [],
+        moderation: null,
         createdAt: new Date().toISOString(),
       };
       setMessages((m) => [...m, userMsg]);
@@ -184,7 +192,10 @@ export function ChatView({
             finished = true;
             const r = e.response;
             setMessages((m) => [
-              ...m,
+              // A blocked message isn't kept; show it the way the server stored it.
+              ...(r.moderation?.action === "block"
+                ? m.map((x) => (x.id === userMsg.id ? { ...x, content: HIDDEN_MESSAGE } : x))
+                : m),
               {
                 id: r.messageId,
                 role: "ASSISTANT",
@@ -193,6 +204,7 @@ export function ChatView({
                 restricted: r.restricted,
                 actions: r.actions,
                 toolExecutions: r.toolExecutions,
+                moderation: r.moderation,
                 createdAt: new Date().toISOString(),
               },
             ]);

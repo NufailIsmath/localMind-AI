@@ -1477,3 +1477,20 @@ button:disabled {
     max-width: 90%;
   }
 }
+
+/* Content-guardrail notice above an answer */
+.moderation-notice {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.moderation-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.moderation-block {
+  background: var(--danger-soft);
+  color: var(--danger);
+}

@@ -17,6 +17,7 @@ import { ClassificationService } from "./rag/classification.service.js";
 import { LeaveService, PrismaLeaveDataSource } from "./modules/leave/leave.service.js";
 import { HttpHrLeaveClient, type HrLeaveClient } from "./modules/integrations/hr/hr-client.js";
 import { HrSyncService } from "./modules/integrations/hr/hr-sync.service.js";
+import { ModerationService, loadExtraTerms } from "./modules/moderation/moderation.service.js";
 import { RetrievalService } from "./rag/retrieval.service.js";
 import { QdrantVectorStore, type VectorStore } from "./rag/vector.service.js";
 
@@ -43,6 +44,7 @@ export interface Services {
   accessRequests: AccessRequestService;
   leave: LeaveService;
   hrSync: HrSyncService;
+  moderation: ModerationService;
 }
 
 /** Infrastructure adapters that tests may replace. */
@@ -128,13 +130,27 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
     onUnexpectedError: (tool, err) => log.error({ tool, err }, "tool failed unexpectedly"),
   });
   const chatRepository = new PrismaChatRepository(prisma);
-  const orchestrator = new Orchestrator(llm, tools, chatRepository, config.orchestrator, log, (e) =>
-    access.audit(e.userId, "security.prompt_injection_detected", "document", e.documentId, {
-      conversationId: e.conversationId,
-      flags: e.flags,
-    }),
+  const moderation = new ModerationService({
+    enabled: config.moderation.enabled,
+    profanityPolicy: config.moderation.profanityPolicy,
+    extraTerms: loadExtraTerms(config.moderation.extraTermsFile),
+  });
+  const orchestrator = new Orchestrator(
+    llm,
+    tools,
+    chatRepository,
+    config.orchestrator,
+    log,
+    (e) =>
+      access.audit(e.userId, "security.prompt_injection_detected", "document", e.documentId, {
+        conversationId: e.conversationId,
+        flags: e.flags,
+      }),
+    moderation,
+    // Who/what category only; the message itself is never stored.
+    (e) => access.audit(e.userId, `moderation.${e.action}`, "conversation", e.conversationId, { category: e.category }),
   );
   const auth = new AuthService(prisma, config.auth.registration);
 
-  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests, leave, hrSync };
+  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests, leave, hrSync, moderation };
 }
