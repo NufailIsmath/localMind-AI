@@ -16,6 +16,7 @@ const fake = await startFakeOllama(
     dimensions: Number(process.env.EMBEDDING_DIMENSIONS ?? 768),
     tokenDelayMs: Number(process.env.MOCK_OLLAMA_TOKEN_DELAY_MS ?? 25),
     host: process.env.MOCK_OLLAMA_HOST ?? "127.0.0.1",
+    guardModel: process.env.GUARD_MODEL ?? "llama-guard3:1b",
   },
   port,
 );

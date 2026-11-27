@@ -29,9 +29,11 @@ export const healthRoutes: FastifyPluginAsync = async (app) => {
         async () => {
         const models = await ollama.listModels({ timeoutMs: 3000 });
         const has = (m: string) => models.some((name) => name === m || name === `${m}:latest`);
-        const missing = [config.ollama.chatModel, config.ollama.embeddingModel].filter((m) => !has(m));
+        const guard = app.services.moderation.guardModel;
+        const wanted = [config.ollama.chatModel, config.ollama.embeddingModel, ...(guard ? [guard] : [])];
+        const missing = wanted.filter((m) => !has(m));
         if (missing.length) throw new MissingModelsError(`missing models: ${missing.join(", ")} (run \`ollama pull <model>\`)`);
-        return `${config.ollama.chatModel}, ${config.ollama.embeddingModel}`;
+        return wanted.join(", ");
         },
         (err) => (err instanceof MissingModelsError ? err.message : "cannot reach Ollama"),
       ),

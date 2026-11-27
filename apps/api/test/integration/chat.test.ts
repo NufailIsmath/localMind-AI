@@ -202,7 +202,7 @@ describe.runIf(infraReady)("chat API: orchestration, RAG and tool calling end-to
       checks: {
         database: { ok: true },
         qdrant: { ok: true },
-        ollama: { ok: true, detail: "qwen3:8b, nomic-embed-text" },
+        ollama: { ok: true, detail: "qwen3:8b, nomic-embed-text, llama-guard3:1b" },
       },
     });
   });

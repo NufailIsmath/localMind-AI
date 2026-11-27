@@ -231,7 +231,7 @@ export interface ChatRequest {
   message: string;
 }
 
-export type ModerationCategory = "sexual" | "hate" | "profanity" | "harassment" | "self_harm";
+export type ModerationCategory = "sexual" | "hate" | "profanity" | "harassment" | "self_harm" | "harmful";
 
 /** Shown with an answer when the content guardrails stepped in (a reminder, or why a message wasn't sent). */
 export interface ModerationNoticeDto {

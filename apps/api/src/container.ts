@@ -18,6 +18,7 @@ import { LeaveService, PrismaLeaveDataSource } from "./modules/leave/leave.servi
 import { HttpHrLeaveClient, type HrLeaveClient } from "./modules/integrations/hr/hr-client.js";
 import { HrSyncService } from "./modules/integrations/hr/hr-sync.service.js";
 import { ModerationService, loadExtraTerms } from "./modules/moderation/moderation.service.js";
+import { LlamaGuard, type SafetyGuard } from "./modules/moderation/llama-guard.js";
 import { RetrievalService } from "./rag/retrieval.service.js";
 import { QdrantVectorStore, type VectorStore } from "./rag/vector.service.js";
 
@@ -56,6 +57,8 @@ export interface ServiceOverrides {
   vectors?: VectorStore;
   /** Lets tests point the HR sync at a mock server or a fake client. */
   hrClient?: HrLeaveClient;
+  /** Replaces Llama Guard (tests). */
+  guard?: SafetyGuard;
 }
 
 /** Composition root: wires every service from configuration. */
@@ -130,10 +133,21 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
     onUnexpectedError: (tool, err) => log.error({ tool, err }, "tool failed unexpectedly"),
   });
   const chatRepository = new PrismaChatRepository(prisma);
+  const g = config.moderation.guard;
   const moderation = new ModerationService({
     enabled: config.moderation.enabled,
     profanityPolicy: config.moderation.profanityPolicy,
     extraTerms: loadExtraTerms(config.moderation.extraTermsFile),
+    log,
+    guard:
+      g.scope === "off"
+        ? undefined
+        : {
+            guard: overrides.guard ?? new LlamaGuard(new OllamaClient({ host: config.ollama.host, timeoutMs: g.timeoutMs, retries: 1 }), g.model),
+            scope: g.scope,
+            enforced: g.categories,
+            failMode: g.failMode,
+          },
   });
   const orchestrator = new Orchestrator(
     llm,
@@ -148,7 +162,11 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
       }),
     moderation,
     // Who/what category only; the message itself is never stored.
-    (e) => access.audit(e.userId, `moderation.${e.action}`, "conversation", e.conversationId, { category: e.category }),
+    (e) =>
+      access.audit(e.userId, `moderation.${e.action}`, "conversation", e.conversationId, {
+        category: e.category,
+        ...(e.source === "llama-guard" ? { source: e.source, ...(e.codes ? { codes: e.codes } : {}) } : {}),
+      }),
   );
   const auth = new AuthService(prisma, config.auth.registration);
 

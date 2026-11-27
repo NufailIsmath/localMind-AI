@@ -24,6 +24,10 @@ export interface ModerationEvent {
   conversationId: string;
   action: "blocked" | "warned" | "output_filtered";
   category: string;
+  /** rules or llama-guard */
+  source?: string;
+  /** Llama Guard hazard codes (S1…S14) when it decided. */
+  codes?: string[];
 }
 
 export interface OrchestratorOptions {
@@ -194,7 +198,7 @@ export class Orchestrator {
     const started = Date.now();
 
     // Guardrails run before anything is stored or sent to the model.
-    const verdict = this.moderation?.checkInput(input.message);
+    const verdict = await this.moderation?.screenInput(input.message, signal);
     const userMessage = verdict?.text ?? input.message;
 
     const title = verdict?.action === "block" ? "New conversation" : conversationTitle(userMessage);
@@ -203,15 +207,15 @@ export class Orchestrator {
     await this.repo.addUserMessage(conversation.id, userMessage);
     emit({ type: "conversation", conversationId: conversation.id });
 
-    const audit = (action: ModerationEvent["action"], category: string) =>
-      this.onModeration?.({ userId: user.userId, conversationId: conversation.id, action, category }).catch(() => {});
+    const audit = (action: ModerationEvent["action"], category: string, source?: string, codes?: string[]) =>
+      this.onModeration?.({ userId: user.userId, conversationId: conversation.id, action, category, source, ...(codes?.length ? { codes } : {}) }).catch(() => {});
     if (verdict?.reply) {
       // Blocked, or the user may be in distress: answer directly, without the model.
-      if (verdict.action === "block") await audit("blocked", verdict.category!);
+      if (verdict.action === "block") await audit("blocked", verdict.category!, verdict.source, verdict.codes);
       this.log.info({ conversationId: conversation.id, moderation: verdict.action, category: verdict.category }, "chat turn answered by guardrails");
       return this.finish(conversation.id, verdict.reply, [], [], [], [], verdict.notice ?? null, emit);
     }
-    if (verdict?.action === "warn") await audit("warned", verdict.category!);
+    if (verdict?.action === "warn") await audit("warned", verdict.category!, verdict.source);
 
     const toolSpecs = this.tools.specs(user.role);
     const messages: ChatMessage[] = [
@@ -269,11 +273,11 @@ export class Orchestrator {
       answer = cleanAssistantContent(final.content);
     }
     if (!answer) answer = "I wasn't able to produce an answer. Please try rephrasing your question.";
-    const checked = this.moderation?.checkOutput(answer);
+    const checked = await this.moderation?.screenOutput(input.message, answer, signal);
     if (checked?.changed) {
       answer = checked.text;
-      this.log.warn({ conversationId: conversation.id, category: checked.category }, "answer adjusted by content guardrails");
-      await audit("output_filtered", checked.category ?? "unknown");
+      this.log.warn({ conversationId: conversation.id, category: checked.category, source: checked.source, codes: checked.codes }, "answer adjusted by content guardrails");
+      await audit("output_filtered", checked.category ?? "unavailable", checked.source, checked.codes);
     }
 
     const answerSources = sources.forAnswer(answer);

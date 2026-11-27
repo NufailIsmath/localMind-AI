@@ -25,7 +25,7 @@ Everything else has sensible defaults. In particular, `ALLOW_REGISTRATION=first-
 docker compose up -d --build        # or: npm run docker:up
 ```
 
-The first run builds the images (a few minutes) and **downloads the models** (`qwen3:8b` ≈ 5 GB, `nomic-embed-text` ≈ 270 MB). Follow the download:
+The first run builds the images (a few minutes) and **downloads the models** (`qwen3:8b` ≈ 5 GB, `nomic-embed-text` ≈ 270 MB, and the `llama-guard3:1b` safety classifier ≈ 1.6 GB). Follow the download:
 
 ```bash
 docker compose logs -f ollama-pull  # ends with "Models ready."
@@ -68,7 +68,7 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 **Ollama installed on your computer (recommended on Mac)**
 
 ```bash
-ollama pull qwen3:8b && ollama pull nomic-embed-text
+ollama pull qwen3:8b && ollama pull nomic-embed-text && ollama pull llama-guard3:1b
 echo "DOCKER_OLLAMA_HOST=http://host.docker.internal:11434" >> .env
 docker compose up -d --build postgres qdrant api web     # skips the Ollama containers
 ```
@@ -122,6 +122,7 @@ Published ports are bound to **127.0.0.1**, so nothing is exposed to your networ
 | `JWT_SECRET` error on `docker compose up` | Set it in `.env` (step 1). |
 | Health shows `ollama: ok: false`, or chat says "cannot reach Ollama" | Check `docker compose ps`: is `ollama` running? Are the models downloaded (`docker compose logs ollama-pull`)? If you use your own Ollama, `DOCKER_OLLAMA_HOST` must be `http://host.docker.internal:11434`, never `localhost`. Then `docker compose up -d api`. |
 | Documents show **failed** after seeding without a model | Fix the model first, then run the seed again: failed documents are re-uploaded and re-indexed automatically. |
+| Chat says "the safety check is unavailable" | Llama Guard isn't downloaded or Ollama can't load it: `docker compose logs ollama-pull`, or `ollama pull llama-guard3:1b` for your own Ollama. To run without it temporarily, set `GUARD_FAIL_MODE=open` (skips it, logged) or `MODERATION_GUARD=off`, then `docker compose up -d api`. |
 | Answers are very slow | No GPU in use: use the NVIDIA override, native Ollama on Mac, or `CHAT_MODEL=qwen3:4b`. |
 | Browser can't reach the API | The web image has the API address baked in at build time. If you serve it elsewhere, set `PUBLIC_API_URL` and `CORS_ORIGINS` in `.env`, then rebuild: `docker compose up -d --build web api`. |
 | Port 3000/4000 already in use | Stop the other app, or change the `ports:` mapping in `docker-compose.yml`. |

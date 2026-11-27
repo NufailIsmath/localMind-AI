@@ -1,14 +1,32 @@
 import { readFileSync } from "node:fs";
 import type { ModerationCategory, ModerationNoticeDto } from "@clbuddy/shared";
-import { AppError } from "../../lib/errors.js";
+import { AppError, UpstreamError, errorMessage } from "../../lib/errors.js";
+import { HAZARDS, type GuardTurn, type HazardCode, type SafetyGuard } from "./llama-guard.js";
 import { ABUSE_DRAFTING, ALLOW_BIGRAMS, ALLOW_TOKENS, LEXICON, SELF_HARM_PHRASES, SEXUAL_PHRASES, type LexiconCategory, type LexiconEntry } from "./lexicon.js";
 
 export type ProfanityPolicy = "warn" | "block" | "allow";
+
+export interface GuardOptions {
+  guard: SafetyGuard;
+  /** input: check messages only; both: also check the model's answers. */
+  scope: "input" | "both";
+  /** Hazard codes acted on; others are logged and allowed. */
+  enforced: HazardCode[];
+  /** closed: if the classifier is unavailable, refuse rather than skip the check. */
+  failMode: "closed" | "open";
+}
+
+export interface ModerationLogger {
+  warn(obj: object, msg?: string): void;
+}
 
 export interface ModerationOptions {
   enabled: boolean;
   profanityPolicy: ProfanityPolicy;
   extraTerms?: LexiconEntry[];
+  /** Model-based second layer (Llama Guard). Rules always run first. */
+  guard?: GuardOptions;
+  log?: ModerationLogger;
 }
 
 export interface Finding {
@@ -35,12 +53,18 @@ export interface InputVerdict {
   reply?: string;
   notice?: ModerationNoticeDto;
   systemNotes: string[];
+  /** Which layer decided (for auditing). */
+  source?: "rules" | "llama-guard";
+  /** Llama Guard hazard codes, when it flagged the message. */
+  codes?: HazardCode[];
 }
 
 export interface OutputVerdict {
   text: string;
   changed: boolean;
   category: ModerationCategory | null;
+  source?: "rules" | "llama-guard";
+  codes?: HazardCode[];
 }
 
 // ---------------------------------------------------------------- normalisation
@@ -151,7 +175,12 @@ export const REPLIES = {
     "- **Reach out to someone you trust**: a friend, family member, your manager or HR. If the company has an Employee Assistance Programme, it's confidential too.\n\n" +
     "If it would help, I can look up the company's wellbeing or EAP information, or help you write a message to someone you trust. " +
     "And if I've misread you and it's just been a rough day, that's okay too. I'm here either way.",
+  harmful:
+    "I can't help with that one. 🙅\n\n" +
+    "If someone could get hurt, please contact emergency services or your security team right away. " +
+    "And if there's a work problem behind this, like a conflict, money worries or pressure to cut corners, I'm happy to help you find the right person to talk to, confidentially.",
   output: "Sorry, I can't share that answer. It didn't meet the content guidelines. Could you ask in a different way?",
+  guardDown: "Sorry, I couldn't run the safety check on my answer, so I'm not showing it. Please try again in a moment.",
 } as const;
 
 export const NOTICES: Record<"warn" | "block", Partial<Record<ModerationCategory, string>>> = {
@@ -160,8 +189,17 @@ export const NOTICES: Record<"warn" | "block", Partial<Record<ModerationCategory
     sexual: "That message wasn't sent to the assistant: explicit content isn't allowed.",
     hate: "That message wasn't sent to the assistant: it contained hateful language.",
     profanity: "That message wasn't sent to the assistant: strong language isn't allowed here.",
+    harmful: "That message wasn't sent to the assistant: it asked for something harmful or against the law.",
   },
 };
+
+/** How a Llama Guard verdict maps onto CL Buddy's categories. */
+export function categoryForHazards(codes: HazardCode[]): "self_harm" | "sexual" | "hate" | "harmful" {
+  if (codes.includes("S11")) return "self_harm";
+  if (codes.some((c) => c === "S3" || c === "S4" || c === "S12")) return "sexual";
+  if (codes.includes("S10")) return "hate";
+  return "harmful";
+}
 
 /** Stored instead of a blocked message, so the text never lands in the database or the model's history. */
 export const HIDDEN_MESSAGE = "[Message hidden: it didn't meet the content guidelines]";
@@ -187,7 +225,9 @@ const NOTE_PROFANITY =
  * "Scunthorpe", "summa cum laude") isn't flagged.
  *
  * Tone and topic (flirting, gossip, role-play) can't be judged by word lists;
- * those are handled by the "professional conduct" section of the system prompt.
+ * those are handled by the "professional conduct" section of the system prompt,
+ * and, when enabled, by Llama Guard (a local safety classifier) as a second
+ * layer behind the rules: see screenInput / screenOutput / screenNote.
  */
 export class ModerationService {
   private readonly matcher: Matcher;
@@ -311,7 +351,95 @@ export class ModerationService {
     return profane.length && this.opts.profanityPolicy === "warn" ? mask(text, profane) : text;
   }
 
-  private block(text: string, category: "sexual" | "hate" | "profanity"): InputVerdict {
+  // ------------------------------------------------ rules + Llama Guard
+
+  get guardModel(): string | undefined {
+    return this.opts.enabled ? this.opts.guard?.guard.model : undefined;
+  }
+
+  /**
+   * Full check of a chat message: the rules first (instant, and they handle
+   * strong language, masking and distress), then Llama Guard for what word
+   * lists can't see: harmful requests in clean words, euphemisms, other
+   * languages.
+   */
+  async screenInput(text: string, signal?: AbortSignal): Promise<InputVerdict> {
+    const rules = { ...this.checkInput(text), source: "rules" as const };
+    if (rules.action === "block" || rules.action === "support" || !this.guardActive()) return rules;
+    const flagged = await this.classify([{ role: "user", content: text }], signal);
+    if (!flagged) return rules;
+    const category = categoryForHazards(flagged);
+    if (category === "self_harm") return { ...rules, action: "support", category, reply: REPLIES.selfHarm, notice: undefined, text, systemNotes: [], source: "llama-guard", codes: flagged };
+    return { ...this.block(text, category), source: "llama-guard", codes: flagged };
+  }
+
+  /** Full check of the model's answer: rules (masking), then Llama Guard on the exchange. */
+  async screenOutput(question: string, answer: string, signal?: AbortSignal): Promise<OutputVerdict> {
+    const rules: OutputVerdict = { ...this.checkOutput(answer), source: "rules" };
+    if (!this.guardActive() || this.opts.guard!.scope !== "both" || rules.text === REPLIES.output) return rules;
+    let flagged: HazardCode[] | null;
+    try {
+      flagged = await this.classify([{ role: "user", content: question }, { role: "assistant", content: rules.text }], signal);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      // Fail closed: an answer that couldn't be checked isn't shown.
+      return { text: REPLIES.guardDown, changed: true, category: null, source: "llama-guard" };
+    }
+    if (!flagged) return rules;
+    return { text: REPLIES.output, changed: true, category: categoryForHazards(flagged), source: "llama-guard", codes: flagged };
+  }
+
+  /** Notes people send each other: rules, then Llama Guard (harmful notes are refused). */
+  async screenNote(text: string | undefined, field = "note", signal?: AbortSignal): Promise<string | undefined> {
+    const cleaned = this.cleanNote(text, field);
+    if (!cleaned || !this.guardActive()) return cleaned;
+    const flagged = await this.classify([{ role: "user", content: cleaned }], signal);
+    const category = flagged ? categoryForHazards(flagged) : null;
+    // A note that sounds like distress isn't refused; the person needs help, not an error.
+    if (category && category !== "self_harm") {
+      throw new AppError(400, "CONTENT_NOT_ALLOWED", `Please keep the ${field} professional: it contains content that isn't allowed.`, { category });
+    }
+    return cleaned;
+  }
+
+  private guardActive(): boolean {
+    return this.opts.enabled && !!this.opts.guard;
+  }
+
+  /**
+   * Enforced hazard codes for the conversation's last turn, or null when it's
+   * safe. With failMode=open an unavailable classifier counts as safe (logged);
+   * with closed (the default) the error propagates.
+   */
+  private async classify(turns: GuardTurn[], signal?: AbortSignal): Promise<HazardCode[] | null> {
+    const g = this.opts.guard!;
+    let verdict;
+    try {
+      verdict = await g.guard.check(turns, signal);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      if (g.failMode === "open") {
+        this.opts.log?.warn({ err: errorMessage(err) }, "Llama Guard unavailable; continuing without it (GUARD_FAIL_MODE=open)");
+        return null;
+      }
+      throw new UpstreamError(
+        "llama-guard",
+        `the safety check is unavailable (${errorMessage(err).replace(/^ollama: /, "")}). Check that ${g.guard.model} is pulled in Ollama`,
+        503,
+      );
+    }
+    if (verdict.safe) return null;
+    const enforced = verdict.codes.filter((c) => g.enforced.includes(c));
+    if (enforced.length === 0) {
+      // "unsafe" with no codes is treated as the most generic enforced category.
+      if (verdict.codes.length === 0 && g.enforced.length) return [g.enforced.includes("S2") ? "S2" : g.enforced[0]!];
+      this.opts.log?.warn({ codes: verdict.codes.map((c) => `${c} ${HAZARDS[c]}`) }, "Llama Guard flagged a category that isn't enforced; allowed");
+      return null;
+    }
+    return enforced;
+  }
+
+  private block(text: string, category: "sexual" | "hate" | "profanity" | "harmful"): InputVerdict {
     return {
       action: "block",
       category,

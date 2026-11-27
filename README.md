@@ -102,7 +102,7 @@ Reading balances from the HR system later is also possible: leave reads go throu
 - **Streaming** — tokens and live tool activity over Server-Sent Events.
 - **Conversation memory** — multi-turn chats persisted in PostgreSQL.
 - **Document-level access control** — documents are private, shared with the whole organisation, or shared with groups (HR, Executives…), and classified Public → Internal → Confidential → Restricted. Users have a clearance level and group memberships. An intern asking for the CEO's salary never retrieves the compensation file, so the model never sees it. Enforced in Qdrant *and* re-checked in PostgreSQL, outside the model.
-- **Content guardrails** — explicit content and hate slurs are blocked before they reach the model (with a kind reply that still helps someone reporting a problem); strong language gets a gentle reminder and is never echoed; answers and notes are filtered too; flirting, gossip and insulting drafts are steered back to professional; anyone who sounds like they're in crisis gets support, not a telling-off. See [Content guardrails](#content-guardrails).
+- **Content guardrails** — word-list rules plus **Llama Guard 3** (local safety classifier) on every message and answer; explicit content and hate slurs are blocked before they reach the model (with a kind reply that still helps someone reporting a problem); strong language gets a gentle reminder and is never echoed; answers and notes are filtered too; flirting, gossip and insulting drafts are steered back to professional; anyone who sounds like they're in crisis gets support, not a telling-off. See [Content guardrails](#content-guardrails).
 - **Observability** — every tool execution is audited (arguments, status, duration); structured logs for ingestion and chat turns.
 - **Fault tolerance** — timeouts, retries with backoff for transient Ollama failures, tool timeouts, bounded tool loops, graceful degradation.
 - **Measurable RAG** — an evaluation harness reports Hit@k, Precision@k, MRR, answer accuracy and citation accuracy over a labelled question set.
@@ -160,7 +160,7 @@ More detail and design decisions: [`docs/architecture.md`](docs/architecture.md)
 ```bash
 cp .env.example .env              # set JWT_SECRET (openssl rand -base64 48)
 docker compose up -d --build      # web, API, Postgres, Qdrant, Ollama + model download
-docker compose logs -f ollama-pull   # wait for "Models ready." (~5 GB on first run)
+docker compose logs -f ollama-pull   # wait for "Models ready." (~7 GB on first run)
 open http://localhost:3000        # the first account becomes the admin
 ```
 
@@ -186,7 +186,10 @@ Any Ollama model with **tool support** works (e.g. `qwen2.5:7b-instruct`, `llama
 ```bash
 ollama pull qwen3:8b            # or qwen3:4b
 ollama pull nomic-embed-text
+ollama pull llama-guard3:1b     # safety classifier for the content guardrails (~1.6 GB)
 ```
+
+On a small GPU (e.g. 6 GB), Ollama swaps between the chat model and Llama Guard, which adds a second or two per message. Pairing `qwen3:4b` with `llama-guard3:1b` fits in 6 GB together.
 
 ### 3. Start the infrastructure and the app
 
@@ -202,7 +205,7 @@ npm run dev:api                 # http://localhost:4000
 npm run dev:web                 # http://localhost:3000  (in a second terminal)
 ```
 
-Open http://localhost:3000, create an account (the first account becomes the administrator), drop some documents into the knowledge base and start asking questions. `GET http://localhost:4000/api/health` reports the status of PostgreSQL, Qdrant and both Ollama models.
+Open http://localhost:3000, create an account (the first account becomes the administrator), drop some documents into the knowledge base and start asking questions. `GET http://localhost:4000/api/health` reports the status of PostgreSQL, Qdrant and the Ollama models (chat, embeddings, Llama Guard).
 
 > **No GPU / can't run Ollama?** `npm run mock:ollama` starts a rule-based stand-in for the Ollama API on port 11434 so you can click through the whole app. It pattern-matches instead of generating text — use it for demos and E2E tests, not for judging answer quality.
 
@@ -381,6 +384,18 @@ CL Buddy is a colleague, so it keeps things workplace-appropriate. Checks run lo
 | The model's own answer | a document tells the model to swear | Masked, or replaced if explicit. |
 | Notes to other people | leave and access-request notes, HR decisions | Explicit/hateful → `400 CONTENT_NOT_ALLOWED`; strong language masked. |
 
+**Two layers.** Rules run first: instant word lists that also mask strong language and spot distress. If the rules let a message through, **[Llama Guard 3](https://ollama.com/library/llama-guard3)** checks it next. It's a local safety classifier running in Ollama, and it catches what word lists can't: harmful requests in clean words ("help me forge receipts for my expense claim"), euphemisms ("I wish I could go to sleep and not wake up"), and other languages. Llama Guard also checks each answer as a reply to the question, and a flagged answer is replaced.
+
+| Llama Guard category | Enforced by default | Result |
+|---|---|---|
+| S1 violent crimes, S2 non-violent crimes (fraud, theft), S9 weapons | ✅ | Blocked: "I can't help with that one", with pointers to the right people |
+| S3 sex crimes, S4 child exploitation, S12 sexual content | ✅ | Blocked, same reply as explicit content |
+| S10 hate | ✅ | Blocked, same reply as slurs |
+| S11 suicide & self-harm | ✅ | Supportive reply with crisis lines, never a block |
+| S5 defamation, S6 specialised advice, S7 privacy, S8 IP, S13 elections, S14 code abuse | ➖ | Logged and allowed. At work they misfire: feedback about a colleague, payroll questions, looking up someone's work email. Add them via `GUARD_CATEGORIES` |
+
+It **fails closed** by default: if Llama Guard is unavailable, chat refuses with "the safety check is unavailable" rather than skipping the check. A flagged or unchecked answer isn't shown. `GUARD_FAIL_MODE=open` skips the check instead (and logs it). Use `GUARD_MODEL=llama-guard3:8b` for a stricter, bigger classifier, or `MODERATION_GUARD=input` to check messages only (faster).
+
 Detection normalises the usual dodges (`f*ck`, `sh!t`, `fuuuck`, `f.u.c.k`, accents, Cyrillic look-alikes, zero-width characters) and matches whole words against a conservative list, so "assistant", "class", "Scunthorpe", "summa cum laude" or "sexual harassment policy" aren't flagged. A test checks for zero flags across every document in the repo. Add your own words with `MODERATION_EXTRA_TERMS_FILE` (one `category:term` per line; `term*` matches a prefix). Blocks and warnings are audited by category, never with the text.
 
 ## Security testing
@@ -458,6 +473,10 @@ All settings are environment variables validated at startup (see [`.env.example`
 | `MODERATION_ENABLED` | `true` | Content guardrails on chat, answers and notes |
 | `PROFANITY_POLICY` | `warn` | Strong language: `warn` (answer + reminder, masked), `block`, or `allow` |
 | `MODERATION_EXTRA_TERMS_FILE` | – | Extra words, one `category:term` per line (`sexual`, `hate`, `profanity`, `insult`) |
+| `MODERATION_GUARD` | `both` | Llama Guard on messages and answers (`both`), messages only (`input`), or `off` |
+| `GUARD_MODEL` | `llama-guard3:1b` | `llama-guard3:8b` is stricter but larger |
+| `GUARD_CATEGORIES` | `S1,S2,S3,S4,S9,S10,S11,S12` | Hazard codes acted on (`all` for every one) |
+| `GUARD_FAIL_MODE` | `closed` | `closed`: refuse when the guard is down; `open`: skip it (logged) |
 
 ## Project structure
 

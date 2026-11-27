@@ -20,6 +20,34 @@ export interface FakeOllamaOptions {
   tokenDelayMs?: number;
   /** Interface to listen on (0.0.0.0 inside Docker). */
   host?: string;
+  /** Model name answered as Llama Guard. */
+  guardModel?: string;
+}
+
+/**
+ * Stand-in for Llama Guard 3: answers "safe" or "unsafe\nS<n>" for the last
+ * turn, like the real model. Recognises a few harmful requests phrased in
+ * clean words (the cases word lists miss) plus a test marker [guard:S2].
+ * [guard-down] makes it fail; [guard-garbage] makes it answer nonsense.
+ */
+const GUARD_RULES: [RegExp, string][] = [
+  [/\[guard:(S\d{1,2})\]/i, "$1"],
+  [/\b(fake|forge|falsify)\b.{0,40}\b(receipts?|invoices?|expenses?|timesheets?|signatures?|sick notes?|doctor'?s notes?)\b/i, "S2"],
+  [/\b(embezzle|launder|skim)\b|\bsteal\b.{0,30}\b(from the company|company money|petty cash)\b/i, "S2"],
+  [/\b(hurt|attack|beat up|stab|shoot|poison|get rid of)\b.{0,30}\b(my )?(boss|manager|colleague|coworker|co-worker|team ?lead)\b/i, "S1"],
+  [/\b(make|build|assemble)\b.{0,30}\b(bomb|explosives?|pipe bomb|nerve agent|bioweapon)\b/i, "S9"],
+  [/\b(steamy|spicy|intimate|raunchy)\b.{0,20}\b(story|scene|chat|roleplay)\b|\bundress(ing)?\b/i, "S12"],
+  [/\bgo to sleep and (never|not) wake up\b|\bdisappear (forever|for good)\b/i, "S11"],
+  [/\b(women|immigrants|foreigners|muslims|jews|christians|gay people|black people)\b.{0,20}\b(are (inferior|subhuman|animals|vermin)|shouldn'?t be (hired|allowed))\b/i, "S10"],
+  [/\bwhere does (he|she|my colleague) live\b/i, "S7"],
+];
+function guardAnswer(text: string): string {
+  if (text.includes("[guard-garbage]")) return "I think this is probably fine?";
+  for (const [re, code] of GUARD_RULES) {
+    const m = text.match(re);
+    if (m) return `unsafe\n${code.replace("$1", (m[1] ?? "").toUpperCase())}`;
+  }
+  return "safe";
 }
 
 export interface FakeOllama {
@@ -271,17 +299,26 @@ export async function startFakeOllama(opts: FakeOllamaOptions = {}, port = 0): P
   const chatModel = opts.chatModel ?? "qwen3:8b";
   const embeddingModel = opts.embeddingModel ?? "nomic-embed-text";
   const dims = opts.dimensions ?? 768;
+  const guardModel = opts.guardModel ?? "llama-guard3:1b";
   const requests: FakeOllama["requests"] = [];
 
   const server = createServer(async (req, res) => {
     try {
       if (req.method === "GET" && req.url === "/api/tags") {
-        return json(res, 200, { models: [{ name: chatModel }, { name: `${embeddingModel}:latest` }] });
+        return json(res, 200, { models: [{ name: chatModel }, { name: `${embeddingModel}:latest` }, { name: guardModel }] });
       }
       if (req.method === "GET" && req.url === "/api/version") return json(res, 200, { version: "fake" });
       if (req.method !== "POST") return json(res, 404, { error: "not found" });
       const body = await readJson(req);
-      requests.push({ path: req.url ?? "", body });
+      const isGuard = req.url === "/api/chat" && body.model === guardModel;
+      // Guard calls are recorded separately so tests inspecting the chat model's input aren't affected.
+      requests.push({ path: isGuard ? "/api/chat (guard)" : (req.url ?? ""), body });
+
+      if (isGuard) {
+        const last = (body as OllamaChatBody).messages.at(-1)?.content ?? "";
+        if (last.includes("[guard-down]")) return json(res, 500, { error: "simulated guard crash" });
+        return json(res, 200, { model: guardModel, message: { role: "assistant", content: guardAnswer(last) }, done: true });
+      }
 
       if (req.url === "/api/embed") {
         if (body.model !== embeddingModel) return json(res, 404, { error: `model "${body.model}" not found, try pulling it first` });

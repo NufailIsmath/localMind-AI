@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseHazardList, type HazardCode } from "../modules/moderation/llama-guard.js";
 
 const bool = z
   .enum(["true", "false", "1", "0"])
@@ -81,6 +82,17 @@ const EnvSchema = z
     PROFANITY_POLICY: z.enum(["warn", "block", "allow"]).default("warn"),
     /** Optional file of extra terms, one "category:term" per line (see docs). */
     MODERATION_EXTRA_TERMS_FILE: z.string().optional(),
+    /**
+     * Llama Guard (local safety classifier via Ollama) as a second layer behind the rules:
+     * both = messages and answers, input = messages only, off.
+     */
+    MODERATION_GUARD: z.enum(["both", "input", "off"]).default("both"),
+    GUARD_MODEL: z.string().min(1).default("llama-guard3:1b"),
+    /** Hazard codes to act on (S1–S14 or "all"); the default leaves out ones that misfire at work. */
+    GUARD_CATEGORIES: z.string().default("S1,S2,S3,S4,S9,S10,S11,S12"),
+    /** closed: refuse when the classifier is unavailable; open: skip it (logged). */
+    GUARD_FAIL_MODE: z.enum(["closed", "open"]).default("closed"),
+    GUARD_TIMEOUT_MS: int(20_000, 500),
 
     MAX_TOOL_ROUNDS: int(5, 1),
     MAX_TOOL_CALLS_PER_ROUND: int(5, 1),
@@ -105,7 +117,12 @@ export interface AppConfig {
   hrSync: { enabled: boolean; baseUrl: string; token?: string; timeoutMs: number; intervalMs: number; maxAttempts: number };
   auth: { jwtSecret: string; jwtExpiresIn: string; registration: "open" | "closed" | "first-user" };
   databaseUrl: string;
-  moderation: { enabled: boolean; profanityPolicy: "warn" | "block" | "allow"; extraTermsFile?: string };
+  moderation: {
+    enabled: boolean;
+    profanityPolicy: "warn" | "block" | "allow";
+    extraTermsFile?: string;
+    guard: { scope: "both" | "input" | "off"; model: string; categories: HazardCode[]; failMode: "closed" | "open"; timeoutMs: number };
+  };
   qdrant: { url: string; apiKey?: string; collection: string };
   ollama: {
     host: string;
@@ -163,7 +180,18 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     auth: { jwtSecret: e.JWT_SECRET, jwtExpiresIn: e.JWT_EXPIRES_IN, registration: e.ALLOW_REGISTRATION },
     databaseUrl: e.DATABASE_URL,
-    moderation: { enabled: e.MODERATION_ENABLED, profanityPolicy: e.PROFANITY_POLICY, extraTermsFile: e.MODERATION_EXTRA_TERMS_FILE || undefined },
+    moderation: {
+      enabled: e.MODERATION_ENABLED,
+      profanityPolicy: e.PROFANITY_POLICY,
+      extraTermsFile: e.MODERATION_EXTRA_TERMS_FILE || undefined,
+      guard: {
+        scope: e.MODERATION_GUARD,
+        model: e.GUARD_MODEL,
+        categories: parseHazardList(e.GUARD_CATEGORIES),
+        failMode: e.GUARD_FAIL_MODE,
+        timeoutMs: e.GUARD_TIMEOUT_MS,
+      },
+    },
     qdrant: { url: e.QDRANT_URL, apiKey: e.QDRANT_API_KEY || undefined, collection: e.QDRANT_COLLECTION },
     ollama: {
       host: e.OLLAMA_HOST,

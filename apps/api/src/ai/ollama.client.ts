@@ -24,7 +24,7 @@ export interface OllamaChatBody {
   think?: boolean;
   format?: Record<string, unknown> | "json";
   keep_alive?: string;
-  options?: { temperature?: number; num_ctx?: number };
+  options?: { temperature?: number; num_ctx?: number; num_predict?: number };
 }
 
 export interface OllamaChatChunk {

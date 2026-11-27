@@ -52,12 +52,12 @@ export const leaveRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(201).send(
         await leave.createRequest(req.principal.userId, {
           ...action,
-          note: app.services.moderation.cleanNote(action.note ?? undefined) ?? null,
+          note: await app.services.moderation.screenNote(action.note ?? undefined) ?? null,
           actionRef: `${body.messageId}:${body.actionId}`,
         }),
       );
     }
-    return reply.code(201).send(await leave.createRequest(req.principal.userId, { ...body, note: app.services.moderation.cleanNote(body.note) }));
+    return reply.code(201).send(await leave.createRequest(req.principal.userId, { ...body, note: await app.services.moderation.screenNote(body.note) }));
   });
 
   /** Withdraw a pending request / cancel your own future leave. */
@@ -75,13 +75,13 @@ export const leaveRoutes: FastifyPluginAsync = async (app) => {
   app.post("/manage/requests/:id/approve", async (req) => {
     const { id } = parse(UuidParam, req.params);
     const { note } = parse(z.object({ note: z.string().trim().max(500).optional() }), req.body ?? {});
-    return leave.decide(req.principal, id, true, app.services.moderation.cleanNote(note));
+    return leave.decide(req.principal, id, true, await app.services.moderation.screenNote(note));
   });
 
   app.post("/manage/requests/:id/reject", async (req) => {
     const { id } = parse(UuidParam, req.params);
     const { note } = parse(z.object({ note: z.string().trim().max(500).optional() }), req.body ?? {});
-    return leave.decide(req.principal, id, false, app.services.moderation.cleanNote(note));
+    return leave.decide(req.principal, id, false, await app.services.moderation.screenNote(note));
   });
 
   app.get("/manage/people", async (req) => {
@@ -119,7 +119,7 @@ export const leaveRoutes: FastifyPluginAsync = async (app) => {
       }),
       req.body,
     );
-    return reply.code(201).send(await leave.addEntry(req.principal, { ...body, note: body.note == null ? body.note : app.services.moderation.cleanNote(body.note) }));
+    return reply.code(201).send(await leave.addEntry(req.principal, { ...body, note: body.note == null ? body.note : await app.services.moderation.screenNote(body.note) }));
   });
 
   app.delete("/manage/entries/:id", async (req, reply) => {

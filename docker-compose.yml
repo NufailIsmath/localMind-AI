@@ -44,6 +44,10 @@ x-api-env: &api-env
   LEAVE_MANAGER_GROUP: ${LEAVE_MANAGER_GROUP:-HR}
   MODERATION_ENABLED: ${MODERATION_ENABLED:-true}
   PROFANITY_POLICY: ${PROFANITY_POLICY:-warn}
+  MODERATION_GUARD: ${MODERATION_GUARD:-both}
+  GUARD_MODEL: ${GUARD_MODEL:-llama-guard3:1b}
+  GUARD_CATEGORIES: ${GUARD_CATEGORIES:-S1,S2,S3,S4,S9,S10,S11,S12}
+  GUARD_FAIL_MODE: ${GUARD_FAIL_MODE:-closed}
   HR_SYNC_ENABLED: ${HR_SYNC_ENABLED:-false}
   HR_API_BASE_URL: ${HR_API_BASE_URL:-https://hr-api.example.com/v1}
   HR_API_TOKEN: ${HR_API_TOKEN:-}
@@ -95,6 +99,7 @@ services:
         until ollama list >/dev/null 2>&1; do echo "waiting for ollama…"; sleep 2; done
         ollama pull ${CHAT_MODEL:-qwen3:8b}
         ollama pull ${EMBEDDING_MODEL:-nomic-embed-text}
+        if [ "${MODERATION_GUARD:-both}" != "off" ]; then ollama pull ${GUARD_MODEL:-llama-guard3:1b}; fi
         echo "Models ready."
     restart: "no"
 
