@@ -17,7 +17,9 @@ const fake = await startFakeOllama(
     tokenDelayMs: Number(process.env.MOCK_OLLAMA_TOKEN_DELAY_MS ?? 25),
     host: process.env.MOCK_OLLAMA_HOST ?? "127.0.0.1",
     guardModel: process.env.GUARD_MODEL ?? "llama-guard3:1b",
+    // The mock also serves an OpenAI-compatible API under /v1 (stand-in for a hosted provider).
+    apiKey: process.env.AI_API_KEY ?? "test-key",
   },
   port,
 );
-console.log(`Mock Ollama listening on ${fake.url}`);
+console.log(`Mock Ollama listening on ${fake.url} (OpenAI-compatible API at ${fake.url}/v1)`);

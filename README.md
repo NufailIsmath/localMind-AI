@@ -166,6 +166,22 @@ open http://localhost:3000        # the first account becomes the admin
 
 GPU, Mac/native Ollama, mock mode and troubleshooting: [`docs/docker.md`](docs/docker.md).
 
+### No GPU? Use a hosted AI provider
+
+CL Buddy can use any **OpenAI-compatible** hosted API (Roar AI, OpenAI, OpenRouter, Together, Groq…) instead of the local chat model. You need a base URL, an API key and a tool-calling model name:
+
+```bash
+AI_PROVIDER=openai
+AI_BASE_URL=https://<provider host>/v1
+AI_API_KEY=<your key>
+AI_PROVIDER_LABEL=Roar AI
+CHAT_MODEL=<a tool-calling model>
+EMBEDDING_PROVIDER=ollama   # keep embeddings and Llama Guard local (small, ~2 GB)
+GUARD_PROVIDER=ollama
+```
+
+Chat messages and the passages retrieved for them then go to the provider (access control still decides *which* passages), and the app says "AI by Roar AI" instead of "All systems local". Fully hosted setups, re-indexing, trial expiry and cost: [`docs/hosted-ai.md`](docs/hosted-ai.md).
+
 ## Quick start (for development)
 
 ### 1. Prerequisites
@@ -456,7 +472,9 @@ All settings are environment variables validated at startup (see [`.env.example`
 
 | Variable | Default | |
 |---|---|---|
-| `CHAT_MODEL` | `qwen3:8b` | Any Ollama model with tool support |
+| `AI_PROVIDER` | `ollama` | `openai` = any hosted OpenAI-compatible API (with `AI_BASE_URL`, `AI_API_KEY`); see [`docs/hosted-ai.md`](docs/hosted-ai.md) |
+| `EMBEDDING_PROVIDER` / `GUARD_PROVIDER` | same as `AI_PROVIDER` | Run embeddings or Llama Guard elsewhere than chat (e.g. hosted chat, local embeddings) |
+| `CHAT_MODEL` | `qwen3:8b` | Any model with tool support (required with a hosted provider) |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | `nomic-embed-text` / `768` | Must match; re-index after changing |
 | `OLLAMA_THINK` | `false` | Qwen3 reasoning mode (slower, sometimes better) |
 | `CHUNK_SIZE_TOKENS` / `CHUNK_OVERLAP_TOKENS` | `600` / `100` | Starting values — tune with the eval harness |

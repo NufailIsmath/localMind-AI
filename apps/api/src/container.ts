@@ -18,7 +18,9 @@ import { LeaveService, PrismaLeaveDataSource } from "./modules/leave/leave.servi
 import { HttpHrLeaveClient, type HrLeaveClient } from "./modules/integrations/hr/hr-client.js";
 import { HrSyncService } from "./modules/integrations/hr/hr-sync.service.js";
 import { ModerationService, loadExtraTerms } from "./modules/moderation/moderation.service.js";
-import { LlamaGuard, type SafetyGuard } from "./modules/moderation/llama-guard.js";
+import { LlamaGuard, OpenAiLlamaGuard, type SafetyGuard } from "./modules/moderation/llama-guard.js";
+import { OpenAiClient } from "./ai/openai.client.js";
+import { OpenAiEmbeddingService, OpenAiLlmService } from "./ai/openai-llm.service.js";
 import { RetrievalService } from "./rag/retrieval.service.js";
 import { QdrantVectorStore, type VectorStore } from "./rag/vector.service.js";
 
@@ -32,6 +34,8 @@ export interface Services {
   config: AppConfig;
   prisma: PrismaClient;
   ollama: OllamaClient;
+  /** The hosted provider's client when AI_PROVIDER=openai. */
+  aiClient?: OpenAiClient;
   llm: LlmService;
   embeddings: EmbeddingService;
   vectors: VectorStore;
@@ -68,20 +72,32 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
     overrides.ollama ?? new OllamaClient({ host: config.ollama.host, timeoutMs: config.ollama.llmTimeoutMs });
   const embeddingClient = new OllamaClient({ host: config.ollama.host, timeoutMs: config.ollama.embeddingTimeoutMs });
 
+  // Hosted, OpenAI-compatible provider (only built when something uses it).
+  const hosted = (timeoutMs: number, retries?: number) =>
+    new OpenAiClient({ baseUrl: config.ai.baseUrl!, apiKey: config.ai.apiKey!, label: config.ai.label, timeoutMs, retries });
+  const aiClient = config.ai.provider === "openai" ? hosted(config.ollama.llmTimeoutMs) : undefined;
+
   const llm =
     overrides.llm ??
-    new OllamaLlmService(ollama, {
-      model: config.ollama.chatModel,
-      think: config.ollama.think,
-      numCtx: config.ollama.numCtx,
-      temperature: config.ollama.temperature,
-    });
+    (aiClient
+      ? new OpenAiLlmService(aiClient, { model: config.ollama.chatModel, temperature: config.ollama.temperature })
+      : new OllamaLlmService(ollama, {
+          model: config.ollama.chatModel,
+          think: config.ollama.think,
+          numCtx: config.ollama.numCtx,
+          temperature: config.ollama.temperature,
+        }));
   const embeddings =
     overrides.embeddings ??
-    new OllamaEmbeddingService(embeddingClient, {
-      model: config.ollama.embeddingModel,
-      dimensions: config.ollama.embeddingDimensions,
-    });
+    (config.ai.embeddingProvider === "openai"
+      ? new OpenAiEmbeddingService(hosted(config.ollama.embeddingTimeoutMs), {
+          model: config.ollama.embeddingModel,
+          dimensions: config.ollama.embeddingDimensions,
+        })
+      : new OllamaEmbeddingService(embeddingClient, {
+          model: config.ollama.embeddingModel,
+          dimensions: config.ollama.embeddingDimensions,
+        }));
   const vectors =
     overrides.vectors ??
     new QdrantVectorStore({
@@ -143,7 +159,11 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
       g.scope === "off"
         ? undefined
         : {
-            guard: overrides.guard ?? new LlamaGuard(new OllamaClient({ host: config.ollama.host, timeoutMs: g.timeoutMs, retries: 1 }), g.model),
+            guard:
+              overrides.guard ??
+              (config.ai.guardProvider === "openai"
+                ? new OpenAiLlamaGuard(hosted(g.timeoutMs, 1), g.model)
+                : new LlamaGuard(new OllamaClient({ host: config.ollama.host, timeoutMs: g.timeoutMs, retries: 1 }), g.model)),
             scope: g.scope,
             enforced: g.categories,
             failMode: g.failMode,
@@ -153,7 +173,7 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
     llm,
     tools,
     chatRepository,
-    config.orchestrator,
+    { ...config.orchestrator, runsLocally: config.ai.provider === "ollama" },
     log,
     (e) =>
       access.audit(e.userId, "security.prompt_injection_detected", "document", e.documentId, {
@@ -170,5 +190,5 @@ export function createServices(config: AppConfig, log: Logger, overrides: Servic
   );
   const auth = new AuthService(prisma, config.auth.registration);
 
-  return { config, prisma, ollama, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests, leave, hrSync, moderation };
+  return { config, prisma, ollama, aiClient, llm, embeddings, vectors, retrieval, ingestion, tools, chatRepository, orchestrator, auth, access, accessRequests, leave, hrSync, moderation };
 }

@@ -307,6 +307,8 @@ export interface ToolInfoDto {
 export interface HealthDto {
   status: "ok" | "degraded";
   checks: Record<string, { ok: boolean; detail?: string }>;
+  /** local: models run on the company's machines; hosted: chat goes to an external provider. */
+  ai?: { mode: "local" | "hosted"; label?: string };
 }
 
 export interface ApiErrorBody {

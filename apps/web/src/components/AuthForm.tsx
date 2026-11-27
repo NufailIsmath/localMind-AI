@@ -1,7 +1,7 @@
 "use client";
 
 import type { AuthResponse } from "@clbuddy/shared";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 
 export function AuthForm({ onAuthenticated }: { onAuthenticated: (auth: AuthResponse) => void }) {
@@ -10,6 +10,11 @@ export function AuthForm({ onAuthenticated }: { onAuthenticated: (auth: AuthResp
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Only claim "runs privately" when the AI actually runs on the company's machines.
+  const [local, setLocal] = useState<boolean | null>(null);
+  useEffect(() => {
+    api.health().then((h) => setLocal(h.ai?.mode !== "hosted"), () => setLocal(null));
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -35,7 +40,7 @@ export function AuthForm({ onAuthenticated }: { onAuthenticated: (auth: AuthResp
         <div className="brand brand-lg">
           <span className="brand-mark">CL</span> Buddy
         </div>
-        <p className="muted">Your work buddy: answers from company docs, help sorting out work issues, and email drafts. Runs privately on your own machines.</p>
+        <p className="muted">Your work buddy: answers from company docs, help sorting out work issues, and email drafts.{local ? " Runs privately on your own machines." : ""}</p>
 
         <div className="tabs" role="tablist">
           <button role="tab" aria-selected={mode === "login"} className={mode === "login" ? "active" : ""} onClick={() => setMode("login")} type="button">

@@ -24,7 +24,11 @@ export function HealthBadge({ token }: { token: string }) {
   return (
     <span className={`health ${health.status === "ok" ? "ok" : "bad"}`} title={title}>
       <span className="dot" aria-hidden />
-      {health.status === "ok" ? "All systems local" : `${problems.map(([n]) => n).join(", ")} unavailable`}
+      {health.status !== "ok"
+        ? `${problems.map(([n]) => (n === "ai" ? (health.ai?.label ?? "AI provider") : n)).join(", ")} unavailable`
+        : health.ai?.mode === "hosted"
+          ? `All systems go · AI by ${health.ai.label ?? "hosted provider"}`
+          : "All systems local"}
     </span>
   );
 }

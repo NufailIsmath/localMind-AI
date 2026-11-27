@@ -81,7 +81,7 @@ export const api = {
   register: (email: string, password: string) => request<AuthResponse>("/api/auth/register", { method: "POST", json: { email, password } }),
   login: (email: string, password: string) => request<AuthResponse>("/api/auth/login", { method: "POST", json: { email, password } }),
   me: (token: string) => request<UserDto>("/api/auth/me", { token }),
-  health: (token?: string | null) => request<HealthDto>("/api/health", { token }).catch((e: ApiError) => {
+  health: (token?: string | null): Promise<HealthDto> => request<HealthDto>("/api/health", { token }).catch((e: ApiError) => {
     // 503 still carries a useful body; surface network errors as degraded.
     if (e.status === 0) return { status: "degraded", checks: { api: { ok: false, detail: e.message } } } satisfies HealthDto;
     throw e;

@@ -31,6 +31,8 @@ export interface ModerationEvent {
 }
 
 export interface OrchestratorOptions {
+  /** False when chat goes to a hosted provider (changes what the assistant says about itself). */
+  runsLocally?: boolean;
   maxToolRounds: number;
   maxToolCallsPerRound: number;
   historyMessageLimit: number;
@@ -219,7 +221,7 @@ export class Orchestrator {
 
     const toolSpecs = this.tools.specs(user.role);
     const messages: ChatMessage[] = [
-      { role: "system", content: buildSystemPrompt({ tools: toolSpecs, user: input.profile }) },
+      { role: "system", content: buildSystemPrompt({ tools: toolSpecs, user: input.profile, runsLocally: this.opts.runsLocally ?? true }) },
       ...history.map(
         (h): ChatMessage =>
           h.role === "USER" ? { role: "user", content: h.content } : { role: "assistant", content: stripCitations(h.content) },

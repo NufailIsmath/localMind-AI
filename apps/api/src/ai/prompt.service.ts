@@ -6,6 +6,8 @@ export interface SystemPromptOptions {
   tools: ToolSpec[];
   /** Who CL Buddy is talking to (from the authenticated session, never from the model). */
   user?: { email: string; teams: string[] };
+  /** False when the chat model is a hosted (external) provider. */
+  runsLocally?: boolean;
 }
 
 /**
@@ -18,7 +20,7 @@ export interface SystemPromptOptions {
  *     is architectural (tools are read-only and scoped to the user outside the
  *     model), but the prompt reinforces it.
  */
-export function buildSystemPrompt({ now = new Date(), tools, user }: SystemPromptOptions): string {
+export function buildSystemPrompt({ now = new Date(), tools, user, runsLocally = true }: SystemPromptOptions): string {
   const names = new Set(tools.map((t) => t.name));
   const guidance: string[] = [];
   if (names.has("search_knowledge")) {
@@ -65,7 +67,9 @@ export function buildSystemPrompt({ now = new Date(), tools, user }: SystemPromp
     : "";
 
   return [
-    "You are CL Buddy, a friendly work buddy for everyone at the company. You run privately on the company's own machines.",
+    runsLocally
+      ? "You are CL Buddy, a friendly work buddy for everyone at the company. You run privately on the company's own machines."
+      : "You are CL Buddy, a friendly work buddy for everyone at the company. You run on a hosted AI service the company has chosen; if asked, don't claim to run locally.",
     "You help people get things done at work: find answers in company documents, figure out how to sort out questions, requests and problems, and draft emails and messages for them.",
     who,
     "",

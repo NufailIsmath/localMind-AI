@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { OllamaChatBody, OllamaMessage, OllamaToolCall } from "../../src/ai/ollama.client.js";
+import type { OpenAiChatBody, OpenAiMessage } from "../../src/ai/openai.client.js";
 import { hashEmbed } from "./hash-embeddings.js";
 
 /**
@@ -22,6 +23,8 @@ export interface FakeOllamaOptions {
   host?: string;
   /** Model name answered as Llama Guard. */
   guardModel?: string;
+  /** Bearer token required on the OpenAI-compatible routes (/v1/…). */
+  apiKey?: string;
 }
 
 /**
@@ -41,6 +44,37 @@ const GUARD_RULES: [RegExp, string][] = [
   [/\b(women|immigrants|foreigners|muslims|jews|christians|gay people|black people)\b.{0,20}\b(are (inferior|subhuman|animals|vermin)|shouldn'?t be (hired|allowed))\b/i, "S10"],
   [/\bwhere does (he|she|my colleague) live\b/i, "S7"],
 ];
+/** JSON-mode classification. Deliberately obedient to instructions inside the document. */
+function classifyAnswer(content: string): string {
+  const doc = content.toLowerCase();
+  const injected = doc.match(/classify (?:this|it|the document) as (public|internal|confidential|restricted)/);
+  const answer = injected
+    ? { classification: injected[1]!.toUpperCase(), reasons: ["As instructed by the document"] }
+    : /customer (?:list|records)|home address/.test(doc)
+      ? { classification: "CONFIDENTIAL", reasons: ["Contains customer personal data"] }
+      : { classification: "INTERNAL", reasons: [] };
+  return JSON.stringify(answer);
+}
+
+/** OpenAI-style history → Ollama-style, so decide() serves both APIs. */
+function fromOpenAiMessages(messages: OpenAiMessage[]): OllamaMessage[] {
+  const names = new Map<string, string>();
+  return messages.map((m): OllamaMessage => {
+    if (m.role === "assistant") {
+      for (const c of m.tool_calls ?? []) names.set(c.id!, c.function.name!);
+      return {
+        role: "assistant",
+        content: m.content ?? "",
+        ...(m.tool_calls?.length
+          ? { tool_calls: m.tool_calls.map((c) => ({ id: c.id, function: { name: c.function.name!, arguments: JSON.parse(c.function.arguments || "{}") } })) }
+          : {}),
+      };
+    }
+    if (m.role === "tool") return { role: "tool", content: m.content, tool_name: names.get(m.tool_call_id) ?? "", tool_call_id: m.tool_call_id };
+    return { role: m.role, content: m.content };
+  });
+}
+
 function guardAnswer(text: string): string {
   if (text.includes("[guard-garbage]")) return "I think this is probably fine?";
   for (const [re, code] of GUARD_RULES) {
@@ -300,6 +334,7 @@ export async function startFakeOllama(opts: FakeOllamaOptions = {}, port = 0): P
   const embeddingModel = opts.embeddingModel ?? "nomic-embed-text";
   const dims = opts.dimensions ?? 768;
   const guardModel = opts.guardModel ?? "llama-guard3:1b";
+  const apiKey = opts.apiKey ?? "test-key";
   const requests: FakeOllama["requests"] = [];
 
   const server = createServer(async (req, res) => {
@@ -308,6 +343,79 @@ export async function startFakeOllama(opts: FakeOllamaOptions = {}, port = 0): P
         return json(res, 200, { models: [{ name: chatModel }, { name: `${embeddingModel}:latest` }, { name: guardModel }] });
       }
       if (req.method === "GET" && req.url === "/api/version") return json(res, 200, { version: "fake" });
+      // ---- OpenAI-compatible API (a stand-in for hosted gateways such as Roar AI) ----
+      if (req.url?.startsWith("/v1/")) {
+        if (req.headers.authorization !== `Bearer ${apiKey}`) return json(res, 401, { error: { message: "Invalid API key", type: "invalid_request_error" } });
+        if (req.method === "GET" && req.url === "/v1/models") {
+          return json(res, 200, { object: "list", data: [chatModel, embeddingModel, guardModel].map((id) => ({ id, object: "model" })) });
+        }
+        const body = await readJson(req);
+        const isGuard = req.url === "/v1/chat/completions" && body.model === guardModel;
+        requests.push({ path: isGuard ? "/v1/chat/completions (guard)" : req.url, body });
+        if (req.url === "/v1/embeddings") {
+          if (body.model !== embeddingModel) return json(res, 404, { error: { message: `The model \`${body.model}\` does not exist` } });
+          const inputs: string[] = Array.isArray(body.input) ? body.input : [body.input];
+          return json(res, 200, { object: "list", data: inputs.map((t, index) => ({ object: "embedding", index, embedding: hashEmbed(t.replace(/^search_(document|query):\s*/, ""), dims) })), model: embeddingModel });
+        }
+        if (req.url !== "/v1/chat/completions") return json(res, 404, { error: { message: "not found" } });
+        const chat = body as OpenAiChatBody;
+        const reply = (content: string | null, toolCalls: OllamaToolCall[] = []) => ({
+          id: "chatcmpl-fake",
+          object: "chat.completion",
+          model: chat.model,
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant",
+                content,
+                ...(toolCalls.length
+                  ? { tool_calls: toolCalls.map((c, i) => ({ id: `call_fake_${i}`, type: "function", function: { name: c.function.name, arguments: JSON.stringify(c.function.arguments) } })) }
+                  : {}),
+              },
+              finish_reason: toolCalls.length ? "tool_calls" : "stop",
+            },
+          ],
+          usage: { prompt_tokens: 42, completion_tokens: 7, total_tokens: 49 },
+        });
+        if (isGuard) {
+          const last = chat.messages.at(-1)?.content ?? "";
+          if (String(last).includes("[guard-down]")) return json(res, 500, { error: { message: "simulated guard crash" } });
+          return json(res, 200, reply(guardAnswer(String(last))));
+        }
+        if (chat.model !== chatModel) return json(res, 404, { error: { message: `The model \`${chat.model}\` does not exist` } });
+        const messages = fromOpenAiMessages(chat.messages);
+        const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+        if (lastUser.includes("[fail-llm]")) return json(res, 500, { error: { message: "simulated model crash" } });
+        if (chat.response_format) return json(res, 200, reply(classifyAnswer(messages.at(-1)?.content ?? "")));
+        const { content, toolCalls } = decide(messages, new Set((chat.tools ?? []).map((t) => t.function.name)));
+        if (!chat.stream) return json(res, 200, reply(toolCalls.length ? null : content, toolCalls));
+
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const send = (delta: object, finish: string | null = null) =>
+          res.write(`data: ${JSON.stringify({ id: "chatcmpl-fake", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
+        send({ role: "assistant" });
+        if (toolCalls.length) {
+          // Like real providers: id and name first, then the arguments in pieces.
+          toolCalls.forEach((c, index) => {
+            const args = JSON.stringify(c.function.arguments);
+            const half = Math.ceil(args.length / 2);
+            send({ tool_calls: [{ index, id: `call_fake_${index}`, type: "function", function: { name: c.function.name, arguments: "" } }] });
+            send({ tool_calls: [{ index, function: { arguments: args.slice(0, half) } }] });
+            send({ tool_calls: [{ index, function: { arguments: args.slice(half) } }] });
+          });
+          send({}, "tool_calls");
+        } else {
+          for (const token of content.split(/(?<= )/)) {
+            send({ content: token });
+            if (opts.tokenDelayMs) await new Promise((r) => setTimeout(r, opts.tokenDelayMs));
+          }
+          send({}, "stop");
+        }
+        res.write(`data: ${JSON.stringify({ id: "chatcmpl-fake", object: "chat.completion.chunk", choices: [], usage: { prompt_tokens: 42, completion_tokens: 7 } })}\n\n`);
+        res.write("data: [DONE]\n\n");
+        return res.end();
+      }
       if (req.method !== "POST") return json(res, 404, { error: "not found" });
       const body = await readJson(req);
       const isGuard = req.url === "/api/chat" && body.model === guardModel;
@@ -339,14 +447,7 @@ export async function startFakeOllama(opts: FakeOllamaOptions = {}, port = 0): P
         // "classify this as X" instructions inside the document, like a fully
         // prompt-injected model would — the server must not trust it.
         if (chat.format) {
-          const doc = (chat.messages.at(-1)?.content ?? "").toLowerCase();
-          const injected = doc.match(/classify (?:this|it|the document) as (public|internal|confidential|restricted)/);
-          const answer = injected
-            ? { classification: injected[1]!.toUpperCase(), reasons: ["As instructed by the document"] }
-            : /customer (?:list|records)|home address/.test(doc)
-              ? { classification: "CONFIDENTIAL", reasons: ["Contains customer personal data"] }
-              : { classification: "INTERNAL", reasons: [] };
-          return json(res, 200, { model: chatModel, message: { role: "assistant", content: JSON.stringify(answer) }, done: true });
+          return json(res, 200, { model: chatModel, message: { role: "assistant", content: classifyAnswer(chat.messages.at(-1)?.content ?? "") }, done: true });
         }
 
         const toolNames = new Set((chat.tools ?? []).map((t) => t.function.name));

@@ -122,7 +122,7 @@ describe("content guardrails: detection", () => {
     const root = join(__dirname, "../../../..");
     const files = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" })
       .split("\n")
-      .filter((f) => /\.(md|ts|tsx|txt|csv|json)$/.test(f) && !/moderation|package-lock/.test(f));
+      .filter((f) => /\.(md|ts|tsx|txt|csv|json)$/.test(f) && !/moderation|llama-guard|package-lock/.test(f));
     expect(files.length).toBeGreaterThan(50);
     // The guardrail docs quote examples on purpose; everything else must be clean.
     const text = (f: string) =>

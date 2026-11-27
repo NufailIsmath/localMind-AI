@@ -57,6 +57,7 @@ This creates `ceo@`, `cfo@`, `hr@`, `engineer@`, `intern@` and `it@demo.local` (
 | **Mac (Apple Silicon)** | Run Ollama **natively**. Docker on a Mac can't use the GPU, so the in-Docker model is very slow. See below. |
 | **Linux / Windows with an NVIDIA GPU** | Ollama in Docker **with the GPU** (needs the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)). |
 | **No GPU, 16 GB+ RAM** | The default setup works on CPU, but answers take 20–60 s. Try `CHAT_MODEL=qwen3:4b` in `.env`. |
+| **No GPU, or a small one** | A **hosted provider** for chat (e.g. Roar AI): see [hosted-ai.md](hosted-ai.md). Ollama then only runs the small embedding and Llama Guard models, or nothing at all. |
 | **Just want to click around** | Mock mode: no downloads, canned answers. |
 
 **NVIDIA GPU**

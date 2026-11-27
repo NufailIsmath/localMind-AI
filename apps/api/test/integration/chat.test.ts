@@ -194,7 +194,7 @@ describe.runIf(infraReady)("chat API: orchestration, RAG and tool calling end-to
 
   it("reports health of every dependency", async () => {
     const anon = await h.app.inject({ method: "GET", url: "/api/health" });
-    expect(anon.json()).toEqual({ status: "ok", checks: { database: { ok: true }, qdrant: { ok: true }, ollama: { ok: true } } });
+    expect(anon.json()).toEqual({ status: "ok", checks: { database: { ok: true }, qdrant: { ok: true }, ollama: { ok: true } }, ai: { mode: "local" } });
     const res = await h.app.inject({ method: "GET", url: "/api/health", headers: auth(alice) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
@@ -204,6 +204,7 @@ describe.runIf(infraReady)("chat API: orchestration, RAG and tool calling end-to
         qdrant: { ok: true },
         ollama: { ok: true, detail: "qwen3:8b, nomic-embed-text, llama-guard3:1b" },
       },
+      ai: { mode: "local" },
     });
   });
 });

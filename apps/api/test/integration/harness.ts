@@ -6,7 +6,7 @@ import type { FastifyInstance } from "fastify";
 import type { AuthResponse, DocumentDto } from "@clbuddy/shared";
 import { buildApp } from "../../src/app.js";
 import { loadConfig } from "../../src/config/env.js";
-import { startFakeOllama, type FakeOllama } from "../helpers/fake-ollama-server.js";
+import { startFakeOllama, type FakeOllama, type FakeOllamaOptions } from "../helpers/fake-ollama-server.js";
 import { TEST_DATABASE_URL, TEST_QDRANT_URL } from "./global-setup.js";
 
 export const infraReady = process.env.CLBUDDY_INTEGRATION_READY === "1";
@@ -21,8 +21,11 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function createHarness(env: Record<string, string> = {}, { reset = true } = {}): Promise<Harness> {
-  const fake = await startFakeOllama();
+export async function createHarness(
+  env: Record<string, string> = {},
+  { reset = true, fake: fakeOptions = {} }: { reset?: boolean; fake?: FakeOllamaOptions } = {},
+): Promise<Harness> {
+  const fake = await startFakeOllama(fakeOptions);
   const uploadDir = await mkdtemp(join(tmpdir(), "clbuddy-test-"));
   const collection = `test_${randomUUID().replace(/-/g, "")}`;
   const config = loadConfig({
@@ -39,7 +42,8 @@ export async function createHarness(env: Record<string, string> = {}, { reset = 
     RATE_LIMIT_ENABLED: "false",
     ALLOW_REGISTRATION: "true",
     LOG_LEVEL: "silent",
-    ...env,
+    // "{FAKE}" in a value is replaced by the fake model server's URL (e.g. AI_BASE_URL: "{FAKE}/v1").
+    ...Object.fromEntries(Object.entries(env).map(([k, v]) => [k, v.replaceAll("{FAKE}", fake.url)])),
   });
   const app = await buildApp(config, { logger: false });
   await app.services.vectors.ensureCollection();

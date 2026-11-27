@@ -1,4 +1,5 @@
 import type { OllamaClient } from "../../ai/ollama.client.js";
+import type { OpenAiClient } from "../../ai/openai.client.js";
 import { UpstreamError } from "../../lib/errors.js";
 
 /**
@@ -77,6 +78,26 @@ export class LlamaGuard implements SafetyGuard {
       { signal },
     );
     return parseGuardOutput(res.message?.content ?? "");
+  }
+}
+
+/**
+ * Llama Guard hosted by an OpenAI-compatible provider (e.g. a gateway that
+ * serves meta-llama/Llama-Guard-3-8B). The provider applies the model's chat
+ * template, so the answer has the same "safe" / "unsafe\nS2" format.
+ */
+export class OpenAiLlamaGuard implements SafetyGuard {
+  constructor(
+    private readonly client: OpenAiClient,
+    readonly model: string,
+  ) {}
+
+  async check(turns: GuardTurn[], signal?: AbortSignal): Promise<GuardVerdict> {
+    const res = await this.client.chat(
+      { model: this.model, messages: turns.map((t) => ({ role: t.role, content: clip(t.content) })), temperature: 0, max_tokens: 20 },
+      { signal },
+    );
+    return parseGuardOutput(res.choices?.[0]?.message?.content ?? "");
   }
 }
 

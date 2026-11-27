@@ -32,9 +32,16 @@ x-api-env: &api-env
   # Separate from OLLAMA_HOST in .env (that one is for `npm run dev`, where Ollama is on localhost;
   # inside a container "localhost" is the container itself).
   OLLAMA_HOST: ${DOCKER_OLLAMA_HOST:-http://ollama:11434}
-  CHAT_MODEL: ${CHAT_MODEL:-qwen3:8b}
-  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
-  EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
+  # Hosted, OpenAI-compatible provider (e.g. Roar AI); see docs/hosted-ai.md.
+  AI_PROVIDER: ${AI_PROVIDER:-ollama}
+  AI_BASE_URL: ${AI_BASE_URL:-}
+  AI_API_KEY: ${AI_API_KEY:-}
+  AI_PROVIDER_LABEL: ${AI_PROVIDER_LABEL:-}
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+  GUARD_PROVIDER: ${GUARD_PROVIDER:-}
+  CHAT_MODEL: ${CHAT_MODEL:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+  EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-}
   OLLAMA_THINK: ${OLLAMA_THINK:-false}
   OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-8192}
   RETRIEVAL_SCORE_THRESHOLD: ${RETRIEVAL_SCORE_THRESHOLD:-0.35}
@@ -45,7 +52,7 @@ x-api-env: &api-env
   MODERATION_ENABLED: ${MODERATION_ENABLED:-true}
   PROFANITY_POLICY: ${PROFANITY_POLICY:-warn}
   MODERATION_GUARD: ${MODERATION_GUARD:-both}
-  GUARD_MODEL: ${GUARD_MODEL:-llama-guard3:1b}
+  GUARD_MODEL: ${GUARD_MODEL:-}
   GUARD_CATEGORIES: ${GUARD_CATEGORIES:-S1,S2,S3,S4,S9,S10,S11,S12}
   GUARD_FAIL_MODE: ${GUARD_FAIL_MODE:-closed}
   HR_SYNC_ENABLED: ${HR_SYNC_ENABLED:-false}
@@ -92,14 +99,23 @@ services:
     depends_on: [ollama]
     environment:
       OLLAMA_HOST: http://ollama:11434
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+      GUARD_PROVIDER: ${GUARD_PROVIDER:-}
+      MODERATION_GUARD: ${MODERATION_GUARD:-both}
+      CHAT_MODEL: ${CHAT_MODEL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      GUARD_MODEL: ${GUARD_MODEL:-}
     entrypoint: ["sh", "-c"]
+    # Only the models that run locally (a hosted provider's models are skipped).
+    # $$ escapes Compose interpolation: these are read by the container's shell.
     command:
       - |
         set -e  # a failed download must fail this step, not report "ready"
         until ollama list >/dev/null 2>&1; do echo "waiting for ollama…"; sleep 2; done
-        ollama pull ${CHAT_MODEL:-qwen3:8b}
-        ollama pull ${EMBEDDING_MODEL:-nomic-embed-text}
-        if [ "${MODERATION_GUARD:-both}" != "off" ]; then ollama pull ${GUARD_MODEL:-llama-guard3:1b}; fi
+        if [ "$$AI_PROVIDER" = "ollama" ]; then ollama pull "$${CHAT_MODEL:-qwen3:8b}"; fi
+        if [ "$${EMBEDDING_PROVIDER:-$$AI_PROVIDER}" = "ollama" ]; then ollama pull "$${EMBEDDING_MODEL:-nomic-embed-text}"; fi
+        if [ "$$MODERATION_GUARD" != "off" ] && [ "$${GUARD_PROVIDER:-$$AI_PROVIDER}" = "ollama" ]; then ollama pull "$${GUARD_MODEL:-llama-guard3:1b}"; fi
         echo "Models ready."
     restart: "no"
 

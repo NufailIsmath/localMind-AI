@@ -36,10 +36,25 @@ const EnvSchema = z
     QDRANT_API_KEY: z.string().optional(),
     QDRANT_COLLECTION: z.string().min(1).default("documents"),
 
+    /**
+     * Where the AI runs. ollama: local models (default). openai: any hosted
+     * OpenAI-compatible API (Roar AI, OpenAI, OpenRouter, Together, Groq…).
+     */
+    AI_PROVIDER: z.enum(["ollama", "openai"]).default("ollama"),
+    /** OpenAI-compatible base URL, including the version path (e.g. https://api.example.com/v1). */
+    AI_BASE_URL: z.url().optional(),
+    AI_API_KEY: z.string().optional(),
+    /** Shown in the app and in errors, e.g. "Roar AI" (defaults to the host name). */
+    AI_PROVIDER_LABEL: z.string().optional(),
+    /** Embeddings and Llama Guard can run elsewhere than chat (e.g. chat hosted, embeddings local). */
+    EMBEDDING_PROVIDER: z.enum(["ollama", "openai"]).optional(),
+    GUARD_PROVIDER: z.enum(["ollama", "openai"]).optional(),
+
     OLLAMA_HOST: z.url().default("http://localhost:11434"),
-    CHAT_MODEL: z.string().min(1).default("qwen3:8b"),
-    EMBEDDING_MODEL: z.string().min(1).default("nomic-embed-text"),
-    EMBEDDING_DIMENSIONS: int(768, 1),
+    /** Defaults suit Ollama; with a hosted provider they must name models it offers. */
+    CHAT_MODEL: z.string().min(1).optional(),
+    EMBEDDING_MODEL: z.string().min(1).optional(),
+    EMBEDDING_DIMENSIONS: z.coerce.number().int().min(1).optional(),
     OLLAMA_THINK: bool.default(false),
     OLLAMA_NUM_CTX: int(8192, 512),
     LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.2),
@@ -87,7 +102,7 @@ const EnvSchema = z
      * both = messages and answers, input = messages only, off.
      */
     MODERATION_GUARD: z.enum(["both", "input", "off"]).default("both"),
-    GUARD_MODEL: z.string().min(1).default("llama-guard3:1b"),
+    GUARD_MODEL: z.string().min(1).optional(),
     /** Hazard codes to act on (S1–S14 or "all"); the default leaves out ones that misfire at work. */
     GUARD_CATEGORIES: z.string().default("S1,S2,S3,S4,S9,S10,S11,S12"),
     /** closed: refuse when the classifier is unavailable; open: skip it (logged). */
@@ -102,6 +117,26 @@ const EnvSchema = z
   .refine((e) => e.CHUNK_OVERLAP_TOKENS < e.CHUNK_SIZE_TOKENS, {
     message: "CHUNK_OVERLAP_TOKENS must be smaller than CHUNK_SIZE_TOKENS",
     path: ["CHUNK_OVERLAP_TOKENS"],
+  })
+  .superRefine((e, ctx) => {
+    const issue = (path: string, message: string) => ctx.addIssue({ code: "custom", path: [path], message });
+    const embeddingProvider = e.EMBEDDING_PROVIDER ?? e.AI_PROVIDER;
+    const guardProvider = e.GUARD_PROVIDER ?? e.AI_PROVIDER;
+    const hosted = e.AI_PROVIDER === "openai" || embeddingProvider === "openai" || (guardProvider === "openai" && e.MODERATION_GUARD !== "off");
+    if (!hosted) return;
+    if (!e.AI_BASE_URL) issue("AI_BASE_URL", "required for the hosted provider (the provider's OpenAI-compatible base URL, e.g. https://api.example.com/v1)");
+    else if (new URL(e.AI_BASE_URL).protocol !== "https:" && !/^(localhost|127\.0\.0\.1|\[::1\]|host\.docker\.internal|[\w-]+)$/.test(new URL(e.AI_BASE_URL).hostname)) {
+      // The API key and company documents go over this connection.
+      issue("AI_BASE_URL", "must use https:// for a remote provider");
+    }
+    if (!e.AI_API_KEY) issue("AI_API_KEY", "required for the hosted provider");
+    if (e.AI_PROVIDER === "openai" && !e.CHAT_MODEL) issue("CHAT_MODEL", "set it to a chat model your provider offers (one that supports tool calling)");
+    if (embeddingProvider === "openai" && (!e.EMBEDDING_MODEL || !e.EMBEDDING_DIMENSIONS)) {
+      issue("EMBEDDING_MODEL", "with hosted embeddings, set EMBEDDING_MODEL and EMBEDDING_DIMENSIONS (or EMBEDDING_PROVIDER=ollama to keep embeddings local)");
+    }
+    if (guardProvider === "openai" && e.MODERATION_GUARD !== "off" && !e.GUARD_MODEL) {
+      issue("GUARD_MODEL", "set it to the provider's Llama Guard model, or use GUARD_PROVIDER=ollama (local) or MODERATION_GUARD=off");
+    }
   });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -124,6 +159,14 @@ export interface AppConfig {
     guard: { scope: "both" | "input" | "off"; model: string; categories: HazardCode[]; failMode: "closed" | "open"; timeoutMs: number };
   };
   qdrant: { url: string; apiKey?: string; collection: string };
+  ai: {
+    provider: "ollama" | "openai";
+    embeddingProvider: "ollama" | "openai";
+    guardProvider: "ollama" | "openai";
+    baseUrl?: string;
+    apiKey?: string;
+    label: string;
+  };
   ollama: {
     host: string;
     chatModel: string;
@@ -156,7 +199,8 @@ export interface AppConfig {
 }
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
-  const parsed = EnvSchema.safeParse(source);
+  // An empty variable means "not set" (Docker Compose passes unset ones as "").
+  const parsed = EnvSchema.safeParse(Object.fromEntries(Object.entries(source).filter(([, v]) => v !== "")));
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Invalid environment configuration:\n${issues}`);
@@ -186,18 +230,26 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
       extraTermsFile: e.MODERATION_EXTRA_TERMS_FILE || undefined,
       guard: {
         scope: e.MODERATION_GUARD,
-        model: e.GUARD_MODEL,
+        model: e.GUARD_MODEL ?? "llama-guard3:1b",
         categories: parseHazardList(e.GUARD_CATEGORIES),
         failMode: e.GUARD_FAIL_MODE,
         timeoutMs: e.GUARD_TIMEOUT_MS,
       },
     },
     qdrant: { url: e.QDRANT_URL, apiKey: e.QDRANT_API_KEY || undefined, collection: e.QDRANT_COLLECTION },
+    ai: {
+      provider: e.AI_PROVIDER,
+      embeddingProvider: e.EMBEDDING_PROVIDER ?? e.AI_PROVIDER,
+      guardProvider: e.GUARD_PROVIDER ?? e.AI_PROVIDER,
+      baseUrl: e.AI_BASE_URL,
+      apiKey: e.AI_API_KEY || undefined,
+      label: e.AI_PROVIDER_LABEL ?? (e.AI_BASE_URL ? new URL(e.AI_BASE_URL).hostname : "Ollama"),
+    },
     ollama: {
       host: e.OLLAMA_HOST,
-      chatModel: e.CHAT_MODEL,
-      embeddingModel: e.EMBEDDING_MODEL,
-      embeddingDimensions: e.EMBEDDING_DIMENSIONS,
+      chatModel: e.CHAT_MODEL ?? "qwen3:8b",
+      embeddingModel: e.EMBEDDING_MODEL ?? "nomic-embed-text",
+      embeddingDimensions: e.EMBEDDING_DIMENSIONS ?? 768,
       think: e.OLLAMA_THINK,
       numCtx: e.OLLAMA_NUM_CTX,
       temperature: e.LLM_TEMPERATURE,
